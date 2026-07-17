@@ -21,7 +21,7 @@ def render (db : SQLite) (filter : Filter)
     ContextAsync (Response Body.Any) := do
   let items ← list db filter
   let allItems ← list db .all
-  Response.ok.html (renderHtml items allItems filter)
+  renderHtml items allItems filter |> Response.ok.html
 
 /-- Renders the fragment for the filter the client's currently viewing (`HX-Current-URL`) --
 what every mutating route responds with. -/
@@ -34,19 +34,19 @@ def renderMutation (db : SQLite) (req : Request Body.Stream) : ContextAsync (Res
 def pageHandler (filter : Filter) (db : SQLite) (_req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
   render db filter page
 
-def addHandler (db : SQLite) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  let title ← formField req "title"
-  add db title
-  renderMutation db req
-
 /-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the DB changes), so unlike
 every other route below it targets and returns just that one item, not the whole list section. -/
 def editHandler (db : SQLite) (id : Nat) (_req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
   let items ← list db .all
   match items.find? (fun item => item.id == Int64.ofNat id) with
-  | some item => Response.ok.html (Node.render (itemEditView item))
-  | none => Response.notFound.text "Not Found"
+  | some item => Node.render (itemEditView item) |> Response.ok.html
+  | none => "Not Found" |> Response.notFound.text
+
+def addHandler (db : SQLite) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  let title ← formField req "title"
+  add db title
+  renderMutation db req
 
 def saveHandler (db : SQLite) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
