@@ -21,3 +21,6 @@ Project-specific guidance for Claude Code when working in this repo.
   add real value.
 - Do add comments when it's not clear *why* the code is doing what it does just 
   from reading the code.
+- Don't refer to previous implementations or rejected designs unless doing so is
+  essential to understand the code.
+  

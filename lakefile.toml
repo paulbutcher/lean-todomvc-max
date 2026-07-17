@@ -16,17 +16,17 @@ rev = "v0.1.1"
 [[require]]
 name = "htmx"
 git = "https://github.com/paulbutcher/lean-htmx"
-rev = "v0.1.0"
+rev = "v0.1.1"
 
 [[require]]
 name = "routing"
 git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.1.0"
+rev = "v0.1.1"
 
 [[require]]
 name = "forms"
 git = "https://github.com/paulbutcher/lean-forms"
-rev = "v0.1.0"
+rev = "v0.1.1"
 
 [[lean_lib]]
 name = "Todo"

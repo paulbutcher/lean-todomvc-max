@@ -44,14 +44,14 @@ def editHandler (db : SQLite) (id : Nat) (_req : Request Body.Stream) :
   | none => "Not Found" |> Response.notFound.text
 
 def addHandler (db : SQLite) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  let title ← formField req "title"
-  add db title
+  let fields ← parseForm req.body
+  add db (fields.lookup "title" |>.getD "")
   renderMutation db req
 
 def saveHandler (db : SQLite) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  let title ← formField req "title"
-  setTitle db (Int64.ofNat id) title
+  let fields ← parseForm req.body
+  setTitle db (Int64.ofNat id) (fields.lookup "title" |>.getD "")
   renderMutation db req
 
 def toggleHandler (db : SQLite) (id : Nat) (req : Request Body.Stream) :
