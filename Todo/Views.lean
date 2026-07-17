@@ -94,8 +94,8 @@ def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
 def mutationFragment (items allItems : Array Item) (filter : Filter) : String :=
   Node.render (listSection items) ++ Node.render (footerFragment allItems filter)
 
-def page (items allItems : Array Item) (filter : Filter) : String :=
-  document (pretty := true) (lang := "en")
+def pageView (items allItems : Array Item) (filter : Filter) : String :=
+  document (lang := "en")
     [ head
         [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, link todomvcCss ],
       body

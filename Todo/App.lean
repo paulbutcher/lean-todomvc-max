@@ -32,7 +32,7 @@ def renderMutation (db : SQLite) (req : Request Body.Stream) : ContextAsync (Res
   render db currentFilter mutationFragment
 
 def pageHandler (filter : Filter) (db : SQLite) (_req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
-  render db filter page
+  render db filter pageView
 
 /-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the DB changes), so unlike
 every other route below it targets and returns just that one item, not the whole list section. -/
