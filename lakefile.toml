@@ -1,6 +1,6 @@
 name = "webapp"
 version = "0.1.0"
-defaultTargets = ["webapp", "Forms", "Todo"]
+defaultTargets = ["webapp", "Todo"]
 testDriver = "TodoTests"
 
 [[require]]
@@ -23,8 +23,10 @@ name = "routing"
 git = "https://github.com/paulbutcher/lean-routing"
 rev = "v0.1.0"
 
-[[lean_lib]]
-name = "Forms"
+[[require]]
+name = "forms"
+git = "https://github.com/paulbutcher/lean-forms"
+rev = "v0.1.0"
 
 [[lean_lib]]
 name = "Todo"
