@@ -72,12 +72,14 @@ def filterLink (current target : Filter) (label : String) : Node .flow :=
   li [ a { href := target.path } [label]
          (attrs := { class_ := if current == target then "selected" else none }) ]
 
+def countLabel(activeCount : Nat) : String :=
+  if activeCount == 1 then "1 item left" else s!"{activeCount} items left"
+
 def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
   let activeCount := (allItems.filter (!·.completed)).size
   let completedCount := allItems.size - activeCount
-  let countLabel := if activeCount == 1 then "1 item left" else s!"{activeCount} items left"
   Htmx.footer
-    ([ (span [countLabel] (attrs := { class_ := "todo-count" }) : Node .flow),
+    ([ (span [countLabel activeCount] (attrs := { class_ := "todo-count" }) : Node .flow),
        ul [ filterLink filter .all "All", filterLink filter .active "Active",
             filterLink filter .completed "Completed" ]
          (attrs := { class_ := "filters" }) ]

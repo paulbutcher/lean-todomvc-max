@@ -1,38 +1,19 @@
 import SQLite
 import Todo.Db
 
-/-!
-Tests for `Todo.Db`.
-
-Every function there is `IO` (real SQLite side effects), not the pure functions the rest of this
-codebase checks with `#guard` (`Html/Tags.lean`, `Routing/Pattern.lean`, `Forms/FormBody.lean`).
-So instead, `#eval` each scenario below against a fresh `:memory:` db, asserting with `checkEq` --
-closer to leansqlite's own `tests/TestMain.lean` in spirit (assert-and-fail-loudly), but hand-rolled
-rather than reusing its `TestM`: that lives in leansqlite's `tests/` subproject, a separate
-non-default target its own `lakefile.lean` deliberately doesn't expose to downstream dependents
-(`@[default_target] lean_lib SQLite` only builds `SQLite`), so it isn't available to import here.
--/
-
 namespace TodoTests
 
 open Todo
 
-/-- Fails the surrounding `IO` action -- and so, via `#eval` below, `lake build` itself, exactly
-like a failing `#guard` -- unless `expected == actual`. Confirmed (by a throwaway spike) that an
-`#eval` of a throwing `IO` action surfaces as a build-breaking elaboration error, not a silent
-no-op. -/
 private def checkEq [BEq α] [Repr α] (label : String) (expected actual : α) : IO Unit :=
   unless expected == actual do
     throw <| IO.userError s!"{label}: expected {repr expected}, got {repr actual}"
 
-/-- A fresh in-memory db with the schema applied -- every test below starts from empty, and (since
-each is a brand new `:memory:` connection) `AUTOINCREMENT` ids restart at 1. -/
 private def freshDb : IO SQLite := do
   let db ← SQLite.open ":memory:"
   initSchema db
   pure db
 
-/-- `add`'s "don't add blank todos" rule, and that a non-blank title is trimmed before storing. -/
 private def testAddSkipsBlank : IO Unit := do
   let db ← freshDb
   add db "  "
@@ -40,8 +21,8 @@ private def testAddSkipsBlank : IO Unit := do
   add db "  Buy milk  "
   checkEq "non-blank title is trimmed" #["Buy milk"] ((← list db .all).map (·.title))
 
-/-- `setTitle`'s "empty edited title deletes the todo" rule, and that a non-blank edit is trimmed
-like `add`. -/
+#eval testAddSkipsBlank
+
 private def testSetTitleEmptyDeletes : IO Unit := do
   let db ← freshDb
   add db "Buy milk"
@@ -53,8 +34,8 @@ private def testSetTitleEmptyDeletes : IO Unit := do
   setTitle db item2.id "  Wash the car  "
   checkEq "non-blank edited title is trimmed" #["Wash the car"] ((← list db .all).map (·.title))
 
-/-- `toggleAll`'s any-active-completes-all / else-uncompletes-all semantics, including the empty
-table (no-op, must not crash). -/
+#eval testSetTitleEmptyDeletes
+
 private def testToggleAll : IO Unit := do
   let db ← freshDb
   toggleAll db
@@ -65,7 +46,8 @@ private def testToggleAll : IO Unit := do
   toggleAll db
   checkEq "toggleAll un-completes all when none active" #[false, false] ((← list db .all).map (·.completed))
 
-/-- `list`'s `.active`/`.completed` filters, and `clearCompleted` removing only completed rows. -/
+#eval testToggleAll
+
 private def testListFiltersAndClearCompleted : IO Unit := do
   let db ← freshDb
   add db "a"; add db "b"; add db "c"
@@ -78,9 +60,6 @@ private def testListFiltersAndClearCompleted : IO Unit := do
   clearCompleted db
   checkEq "clearCompleted removes only completed rows" #["b"] ((← list db .all).map (·.title))
 
-#eval testAddSkipsBlank
-#eval testSetTitleEmptyDeletes
-#eval testToggleAll
 #eval testListFiltersAndClearCompleted
 
 end TodoTests
