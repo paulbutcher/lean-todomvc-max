@@ -1,6 +1,6 @@
-name = "webapp"
+name = "todomvc"
 version = "0.1.0"
-defaultTargets = ["webapp", "Todo"]
+defaultTargets = ["TodoMVC", "Todo"]
 testDriver = "TodoTests"
 
 [[require]]
@@ -35,5 +35,5 @@ name = "Todo"
 name = "TodoTests"
 
 [[lean_exe]]
-name = "webapp"
+name = "TodoMVC"
 root = "Main"
