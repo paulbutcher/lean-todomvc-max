@@ -1,12 +1,12 @@
 import Routing.RouteTable
 
 routeTable! Routes
-  [ "/"                      as index,
-    "/active"                as active,
-    "/completed"             as completed,
-    "/todos"                 as todos,
-    "/todos/:id:Nat"         as todo,
-    "/todos/:id:Nat/edit"    as edit,
-    "/todos/:id:Nat/toggle"  as toggle,
-    "/todos/toggle-all"      as toggleAll,
-    "/todos/clear-completed" as clearCompleted ]
+  [ index           := "/",
+    active          := "/active",
+    completed       := "/completed",
+    todos           := "/todos",
+    todo            := "/todos/:id:Nat",
+    edit            := "/todos/:id:Nat/edit",
+    toggle          := "/todos/:id:Nat/toggle",
+    toggleAll       := "/todos/toggle-all",
+    clearCompleted  := "/todos/clear-completed" ]
