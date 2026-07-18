@@ -31,7 +31,8 @@ def list (db : SQLite) (filter : Filter) : IO (Array Item) := do
 
 def add (db : SQLite) (title : String) : IO Unit := do
   let title := title.trimAscii.toString
-  if title.isEmpty then -- TodoMVC's "don't add blank todos" rule
+  -- TodoMVC spec: don't add blank todos.
+  if title.isEmpty then
     pure ()
   else
     db exec!"INSERT INTO todos (title) VALUES ({title})"
@@ -49,8 +50,8 @@ def setTitle (db : SQLite) (id : Int64) (title : String) : IO Unit := do
   else
     db exec!"UPDATE todos SET title = {title} WHERE id = {id}"
 
-/-- If any todo is active, marks all as completed; otherwise marks all as active -- TodoMVC's
-"toggle all" semantics. -/
+/-- TodoMVC's "toggle all" semantics: complete everything if anything's active, otherwise reset
+all to active. -/
 def toggleAll (db : SQLite) : IO Unit :=
   db.transaction (do
     let stmt ← db.prepare "SELECT COUNT(*) FROM todos WHERE completed = 0"

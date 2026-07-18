@@ -23,8 +23,8 @@ def render (db : SQLite) (filter : Filter)
   let allItems ← list db .all
   renderHtml items allItems filter |> Response.ok.html
 
-/-- Renders the fragment for the filter the client's currently viewing (`HX-Current-URL`) --
-what every mutating route responds with. -/
+/-- Renders the fragment for whichever filter the client is currently viewing, per the
+`HX-Current-URL` header HTMX sends with every request. -/
 def renderMutation (db : SQLite) (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
   let currentFilter := match req.line.headers.get? (.ofString! "hx-current-url") with
   | some v => filterFromPath v.value
