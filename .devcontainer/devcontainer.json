@@ -2,6 +2,15 @@
 	"name": "Ubuntu",
 	"build": { "dockerfile": "Dockerfile" },
 
+  // Store Claude's persistent state on the host
+  "mounts": [
+    "source=${localEnv:HOME}/.claude-devcontainer,target=/home/vscode/.claude,type=bind,consistency=cached"
+  ],
+
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+
 	"customizations": {
 		"vscode": {
 			"extensions": ["leanprover.lean4", "anthropic.claude-code"]

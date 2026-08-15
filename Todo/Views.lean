@@ -26,51 +26,48 @@ def filterFromPath (path : String) : Filter :=
   else if path.endsWith "/completed" then .completed
   else .all
 
-def itemView (item : Item) : Node .flow :=
+def itemView (item : Item) : Node .listItem :=
   let itemId := s!"todo-{item.id}"
   let id := item.id.toInt.toNat
   li
     [ div
         [ Htmx.input
-            { type := "checkbox", checked := item.completed }
-            (hx := { hxPost := links.toggle id, hxTarget := "#todo-list-section",
-                     hxSwap := some .outerHTML })
-            (attrs := { class_ := "toggle" }),
+            { type := "checkbox", checked := item.completed, class_ := "toggle",
+              hxPost := links.toggle id, hxTarget := "#todo-list-section",
+              hxSwap := some .outerHTML },
           Htmx.label [item.title]
-            (hx := { hxGet := links.edit id, hxTrigger := "dblclick",
-                     hxTarget := s!"#{itemId}", hxSwap := some .outerHTML }),
-          Htmx.button [] (hx := { hxDelete := links.todo id, hxTarget := "#todo-list-section",
-                                   hxSwap := some .outerHTML })
-            (attrs := { class_ := "destroy" }) ]
-        (attrs := { class_ := "view" }) ]
-    (attrs := { id := itemId, class_ := if item.completed then "completed" else none })
+            { hxGet := links.edit id, hxTrigger := "dblclick",
+              hxTarget := s!"#{itemId}", hxSwap := some .outerHTML },
+          Htmx.button []
+            { class_ := "destroy", hxDelete := links.todo id,
+              hxTarget := "#todo-list-section", hxSwap := some .outerHTML } ]
+        { class_ := "view" } ]
+    { id := itemId, class_ := if item.completed then "completed" else none }
 
-def itemEditView (item : Item) : Node .flow :=
+def itemEditView (item : Item) : Node .listItem :=
   let itemId := s!"todo-{item.id}"
   li
     [ Htmx.input
-        { type := "text", name := "title", value := item.title }
-        (hx := { hxPut := links.todo item.id.toInt.toNat, hxTrigger := "blur, keyup[key=='Enter']",
-                 hxTarget := "#todo-list-section", hxSwap := some .outerHTML })
-        (attrs := { class_ := "edit" })
-        (rawAttrs := [("autofocus", "autofocus")]) ]
-    (attrs := { id := itemId, class_ := "editing" })
+        { type := "text", name := "title", value := item.title, class_ := "edit",
+          hxPut := links.todo item.id.toInt.toNat, hxTrigger := "blur, keyup[key=='Enter']",
+          hxTarget := "#todo-list-section", hxSwap := some .outerHTML }
+        [("autofocus", "autofocus")] ]
+    { id := itemId, class_ := "editing" }
 
 def listSection (items : Array Item) : Node .flow :=
   let allCompleted := items.size > 0 && items.all (·.completed)
   section_
     [ Htmx.input
-        { type := "checkbox", checked := allCompleted }
-        (hx := { hxPost := links.toggleAll, hxTarget := "#todo-list-section",
-                 hxSwap := some .outerHTML })
-        (attrs := { id := "toggle-all", class_ := "toggle-all" }),
-      label [] (attrs := {}) (rawAttrs := [("for", "toggle-all")]),
-      ul (items.toList.map itemView) (attrs := { class_ := "todo-list" }) ]
-    (attrs := { id := "todo-list-section", class_ := "main" })
+        { type := "checkbox", checked := allCompleted, id := "toggle-all",
+          class_ := "toggle-all", hxPost := links.toggleAll,
+          hxTarget := "#todo-list-section", hxSwap := some .outerHTML },
+      label [] { for_ := "toggle-all" },
+      ul (items.toList.map itemView) { class_ := "todo-list" } ]
+    { id := "todo-list-section", class_ := "main" }
 
-def filterLink (current target : Filter) (label : String) : Node .flow :=
-  li [ a { href := target.path } [label]
-         (attrs := { class_ := if current == target then "selected" else none }) ]
+def filterLink (current target : Filter) (label : String) : Node .listItem :=
+  li [ a { href := target.path,
+           class_ := if current == target then "selected" else none } [label] ]
 
 def countLabel(activeCount : Nat) : String :=
   if activeCount == 1 then "1 item left" else s!"{activeCount} items left"
@@ -79,23 +76,22 @@ def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
   let activeCount := (allItems.filter (!·.completed)).size
   let completedCount := allItems.size - activeCount
   Htmx.footer
-    ([ (span [countLabel activeCount] (attrs := { class_ := "todo-count" }) : Node .flow),
+    ([ (span [countLabel activeCount] { class_ := "todo-count" } : Node .flow),
        ul [ filterLink filter .all "All", filterLink filter .active "Active",
             filterLink filter .completed "Completed" ]
-         (attrs := { class_ := "filters" }) ]
+         { class_ := "filters" } ]
       ++ if completedCount > 0 then
            [ (Htmx.button ["Clear completed"]
-               (hx := { hxDelete := links.clearCompleted, hxTarget := "#todo-list-section",
-                        hxSwap := some .outerHTML })
-               (attrs := { class_ := "clear-completed" }) : Node .flow) ]
+               { class_ := "clear-completed", hxDelete := links.clearCompleted,
+                 hxTarget := "#todo-list-section", hxSwap := some .outerHTML } : Node .flow) ]
          else [])
-    (hx := { hxSwapOob := "true" }) (attrs := { id := "todo-footer", class_ := "footer" })
+    { id := "todo-footer", class_ := "footer", hxSwapOob := "true" }
 
 def mutationFragment (items allItems : Array Item) (filter : Filter) : String :=
   Node.render (listSection items) ++ Node.render (footerFragment allItems filter)
 
 def pageView (items allItems : Array Item) (filter : Filter) : String :=
-  document (lang := "en")
+  document
     [ head
         [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, link todomvcCss ],
       body
@@ -104,16 +100,17 @@ def pageView (items allItems : Array Item) (filter : Filter) : String :=
                 [ h1 ["todos"],
                   Htmx.form
                     [ input
-                        { name := "title", placeholder := "What needs to be done?" }
-                        (attrs := { class_ := "new-todo" })
-                        (rawAttrs := [("autofocus", "autofocus")]) ]
-                    (hx := { hxPost := links.todos, hxTarget := "#todo-list-section",
-                             hxSwap := some .outerHTML })
-                    (rawAttrs := [("hx-on::after-request", "this.reset()")]) ]
-                (attrs := { class_ := "header" }),
+                        { name := "title", placeholder := "What needs to be done?",
+                          class_ := "new-todo" }
+                        [("autofocus", "autofocus")] ]
+                    { hxPost := links.todos, hxTarget := "#todo-list-section",
+                      hxSwap := some .outerHTML,
+                      hxOnHtmx := [("after-request", "this.reset()")] } ]
+                { class_ := "header" },
               listSection items,
               footerFragment allItems filter ]
-            (attrs := { class_ := "todoapp" }),
-          footer [p ["Double-click a todo to edit it."]] (attrs := { class_ := "info" }) ] ]
+            { class_ := "todoapp" },
+          footer [p ["Double-click a todo to edit it."]] { class_ := "info" } ] ]
+    (lang := "en")
 
 end Todo

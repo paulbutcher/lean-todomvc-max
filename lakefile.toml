@@ -11,12 +11,12 @@ rev = "v4.31.0"
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.1.1"
+rev = "v0.6.0"
 
 [[require]]
 name = "htmx"
 git = "https://github.com/paulbutcher/lean-htmx"
-rev = "v0.1.1"
+rev = "v0.5.0"
 
 [[require]]
 name = "routing"
