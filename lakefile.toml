@@ -1,6 +1,6 @@
 name = "todomvc"
 version = "0.1.0"
-defaultTargets = ["TodoMVC", "Todo"]
+defaultTargets = ["TodoMVC", "bootstrap", "Todo"]
 testDriver = "TodoTests"
 
 [[require]]
@@ -28,8 +28,17 @@ name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
 rev = "v0.3.0"
 
+[[require]]
+name = "middleware-cookiestore"
+git = "https://github.com/paulbutcher/lean-middleware"
+rev = "v0.3.0"
+subDir = "cookiestore"
+
 [[lean_lib]]
 name = "Todo"
+
+[[lean_lib]]
+name = "Lambda"
 
 [[lean_lib]]
 name = "TodoTests"
@@ -37,3 +46,7 @@ name = "TodoTests"
 [[lean_exe]]
 name = "TodoMVC"
 root = "Main"
+
+[[lean_exe]]
+name = "bootstrap"
+root = "LambdaMain"
