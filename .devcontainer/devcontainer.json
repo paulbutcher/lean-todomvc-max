@@ -8,7 +8,11 @@
   ],
 
   "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "PGHOST": "host.docker.internal",
+    "PGPORT": "5432",
+    "PGUSER": "leantodomvc",
+    "PGDATABASE": "leantodomvc"
   },
 
 	"customizations": {

@@ -1,4 +1,9 @@
 FROM mcr.microsoft.com/devcontainers/base:resolute
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      libpq-dev \
+      postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
 USER vscode
 ENV PATH="/home/vscode/.local/bin:/home/vscode/.elan/bin:${PATH}"
