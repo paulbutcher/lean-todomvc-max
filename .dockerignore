@@ -1,0 +1,18 @@
+# The working tree is bind-mounted from the host, so .lake holds whatever the host last built:
+# on a macOS host that is Mach-O objects and executables, which would silently displace the
+# Linux ones the image needs.
+.lake/
+
+.git/
+.github/
+.devcontainer/
+Dockerfile
+.dockerignore
+README.md
+CLAUDE.md
+LICENSE
+TodoTests/
+TodoTests.lean
+
+# Sample invocation payloads, for `sam local invoke` and the runtime interface emulator.
+events/
