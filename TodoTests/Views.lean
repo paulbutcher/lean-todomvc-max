@@ -20,4 +20,11 @@ open Todo Html
 #guard countLabel 1 == "1 item left"
 #guard countLabel 2 == "2 items left"
 
+/-- A page carries an `hx-headers` attribute exactly when there is a token to put in it: never
+announcing a token it doesn't have, and never silently dropping one it does (which would make
+every mutation from that page fail anti-forgery validation). -/
+theorem csrfAttrs_nonempty_iff (token : Option String) :
+    (csrfAttrs token).isEmpty = token.isNone := by
+  cases token <;> rfl
+
 end TodoTests

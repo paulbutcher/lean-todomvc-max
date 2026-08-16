@@ -21,6 +21,16 @@ def htmxScript : ScriptAttrs :=
 def todomvcCss : LinkAttrs :=
   { rel := "stylesheet", href := "https://unpkg.com/todomvc-app-css@2.4.3/index.css" }
 
+def favicon : LinkAttrs :=
+  { rel := "icon", href := "/favicon.svg" }
+
+/-- Puts the anti-forgery token on `<body>` as an `hx-headers` attribute, which HTMX inherits
+down the whole tree, so every mutating request below carries it. `none` when no `antiForgery`
+middleware established a token, in which case there's nothing to send. -/
+def csrfAttrs : Option String → List (String × String)
+  | none => []
+  | some token => [("hx-headers", "{\"X-CSRF-Token\": \"" ++ token ++ "\"}")]
+
 def Filter.path : Filter → String
   | .all => links.index
   | .active => links.active
@@ -95,10 +105,11 @@ def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
 def mutationFragment (items allItems : Array Item) (filter : Filter) : String :=
   Node.render (listSection items) ++ Node.render (footerFragment allItems filter)
 
-def pageView (items allItems : Array Item) (filter : Filter) : String :=
+def pageView (csrfToken : Option String) (items allItems : Array Item) (filter : Filter) : String :=
   document
     [ head
-        [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, link todomvcCss ],
+        [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, link todomvcCss,
+          link favicon ],
       body
         [ section_
             [ header
@@ -115,7 +126,8 @@ def pageView (items allItems : Array Item) (filter : Filter) : String :=
               listSection items,
               footerFragment allItems filter ]
             { class_ := "todoapp" },
-          footer [p ["Double-click a todo to edit it."]] { class_ := "info" } ] ]
+          footer [p ["Double-click a todo to edit it."]] { class_ := "info" } ]
+        (rawAttrs := csrfAttrs csrfToken) ]
     (lang := "en")
 
 end Todo

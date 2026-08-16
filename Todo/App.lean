@@ -7,7 +7,7 @@ import Std.Http.Server
 import SQLite
 import Html
 import Routing
-import Forms
+import Middleware
 import Todo.Db
 import Todo.Links
 import Todo.Views
@@ -16,7 +16,7 @@ open Std Async
 open Std Http Server
 open Html
 open Routing
-open Forms
+open Middleware
 open Routes
 
 namespace Todo
@@ -36,8 +36,9 @@ def renderMutation (db : SQLite) (req : Request Body.Stream) : ContextAsync (Res
   | none => .all
   render db currentFilter mutationFragment
 
-def pageHandler (filter : Filter) (db : SQLite) (_req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
-  render db filter pageView
+def pageHandler (filter : Filter) (db : SQLite) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) :=
+  render db filter (pageView ((req.extensions.get AntiForgeryToken).map (·.value)))
 
 /-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the DB changes), so unlike
 every other route below it targets and returns just that one item, not the whole list section. -/
@@ -48,16 +49,17 @@ def editHandler (db : SQLite) (id : Nat) (_req : Request Body.Stream) :
   | some item => Node.render (itemEditView item) |> Response.ok.html
   | none => "Not Found" |> Response.notFound.text
 
+def title? (req : Request Body.Stream) : Option String :=
+  (req.extensions.get Params).bind (·.get "title")
+
 def addHandler (db : SQLite) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  let fields ← parseForm req.body
-  match fields.lookup "title" with
+  match title? req with
   | some title => add db title; renderMutation db req
   | none => "Missing title" |> Response.badRequest.text
 
 def saveHandler (db : SQLite) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  let fields ← parseForm req.body
-  match fields.lookup "title" with
+  match title? req with
   | some title => setTitle db (Int64.ofNat id) title; renderMutation db req
   | none => "Missing title" |> Response.badRequest.text
 
@@ -93,5 +95,27 @@ def app (db : SQLite) : StatelessHandler :=
     .post patterns.toggleAll ∘ toggleAllHandler,
     .delete patterns.clearCompleted ∘ clearCompletedHandler
   ] |> toHandler
+
+/-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
+`Middleware.apply`'s documented order. `hsts` and `sslRedirect` are left out because this server
+is run directly over plain http rather than behind a TLS-terminating reverse proxy; that's also
+why the session cookie can't be marked `secure`, since a `secure` cookie would never come back
+and `antiForgery` would then reject every mutation. -/
+def server [SessionStore σ] (db : SQLite) (sessions : σ) : StatelessHandler :=
+  Middleware.apply
+    [forwardedScheme, forwardedRemoteAddr,
+     xFrameOptions .sameOrigin, xContentTypeOptions,
+     catchAll,
+     cookies,
+     session sessions
+       { cookieName := "todomvc-session",
+         cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax } },
+     params,
+     antiForgery,
+     contentType,
+     defaultCharset,
+     notModified,
+     file "public"]
+    (app db)
 
 end Todo
