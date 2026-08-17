@@ -18,8 +18,8 @@ instance served the page would be unreadable by whichever instance served the ne
 def sessionStore : IO Middleware.CookieStore := do
   let some encoded ← IO.getEnv "SESSION_KEY"
     | throw (IO.userError "SESSION_KEY is not set")
-  let some key := Middleware.Crypto.Base64.decode encoded
-    | throw (IO.userError "SESSION_KEY is not valid base64")
+  let some key := Lambda.ofHex? encoded
+    | throw (IO.userError "SESSION_KEY is not an even-length run of hex digits")
   if key.size != 32 then
     throw (IO.userError s!"SESSION_KEY decodes to {key.size} bytes, but AES-256 needs 32")
   Middleware.CookieStore.new { key := some key }

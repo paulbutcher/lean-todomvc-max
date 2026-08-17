@@ -8,6 +8,9 @@
 .devcontainer/
 Dockerfile
 .dockerignore
+template.yaml
+samconfig.toml
+.aws-sam/
 README.md
 CLAUDE.md
 LICENSE

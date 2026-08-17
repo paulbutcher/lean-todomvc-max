@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: TodoMVC in Lean, on a Lambda function URL backed by RDS Postgres.
+
+Resources:
+  # Both the function and the database sit in this VPC so the database needs no public address.
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  # RDS insists on subnets in two availability zones even for a single-AZ instance.
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Security group for ${AWS::StackName}"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !GetAtt VPC.CidrBlock
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub "Subnet group for ${AWS::StackName}"
+      SubnetIds: [!Ref Subnet1, !Ref Subnet2]
+
+  DatabaseKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub "Storage encryption key for ${AWS::StackName}"
+      EnableKeyRotation: false
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: !Sub "key-${AWS::StackName}"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: ["kms:*"]
+            Resource: "*"
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    # CloudFormation's default for a database instance, spelled out rather than left implicit:
+    # deleting the stack takes a final snapshot instead of taking the data with it.
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceClass: db.t4g.micro
+      Engine: postgres
+      # Major version only, so RDS picks a minor version it actually offers. 18 matches both the
+      # Postgres the test suite runs against and the libpq the image links.
+      EngineVersion: "18"
+      DBName: todomvc
+      AllocatedStorage: 20
+      StorageEncrypted: true
+      KmsKeyId: !Ref DatabaseKey
+      # RDS generates the password and keeps it in a Secrets Manager secret of its own.
+      ManageMasterUserPassword: true
+      MasterUsername: postgres
+      VPCSecurityGroups: [!Ref SecurityGroup]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+
+  # Sessions are sealed rather than stored, so the key has to outlive any one execution
+  # environment and be identical across all of them.
+  SessionKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Session sealing key for ${AWS::StackName}"
+      GenerateSecretString:
+        # 64 characters confined to [0-9a-f], which decode to the 32 bytes AES-256 needs.
+        PasswordLength: 64
+        ExcludeUppercase: true
+        ExcludePunctuation: true
+        ExcludeCharacters: "ghijklmnopqrstuvwxyz"
+
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures: [arm64]
+      MemorySize: 1024
+      Timeout: 20
+      # Every warm instance holds a Postgres connection open, and db.t4g.micro allows on the
+      # order of a hundred in total.
+      ReservedConcurrentExecutions: 20
+      FunctionUrlConfig:
+        AuthType: NONE
+      VpcConfig:
+        SecurityGroupIds: [!Ref SecurityGroup]
+        SubnetIds: [!Ref Subnet1, !Ref Subnet2]
+      Policies: [AWSLambdaVPCAccessExecutionRole]
+      Environment:
+        Variables:
+          # `Postgres.open ""` passes an empty connection string to libpq, which then reads all
+          # of these itself. Nothing in the application needs to know where they came from.
+          PGHOST: !GetAtt Database.Endpoint.Address
+          PGPORT: !Sub "${Database.Endpoint.Port}"
+          PGDATABASE: todomvc
+          PGUSER: postgres
+          PGPASSWORD: !Sub "{{resolve:secretsmanager:${Database.MasterUserSecret.SecretArn}:SecretString:password}}"
+          # libpq defaults to `prefer`, which falls back to an unencrypted connection without
+          # complaint. `verify-full` would additionally need the RDS CA bundle in the image.
+          PGSSLMODE: require
+          SESSION_KEY: !Sub "{{resolve:secretsmanager:${SessionKey}:SecretString}}"
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: .
+      DockerTag: latest
+
+Outputs:
+  Endpoint:
+    Description: Public URL of the application.
+    Value: !GetAtt FunctionUrl.FunctionUrl
