@@ -90,7 +90,7 @@ theorem requestHeaders_ignores_client_values (event : Event) (name value : Strin
 
 -- `template.yaml` generates the session key as 64 hex characters because that is what AES-256's
 -- 32 byte key comes to; if either number moves without the other, sessions stop being readable.
-#guard (ofHex? (String.mk (List.replicate 64 'a'))).map (·.size) == some 32
+#guard (ofHex? (String.ofList (List.replicate 64 'a'))).map (·.size) == some 32
 
 private def checkEq [BEq α] [Repr α] (label : String) (expected actual : α) : IO Unit :=
   unless expected == actual do

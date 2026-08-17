@@ -3,6 +3,9 @@ version = "0.1.0"
 defaultTargets = ["TodoMVC", "bootstrap", "Todo"]
 testDriver = "TodoTests"
 
+[leanOptions]
+warningAsError = true
+
 [[require]]
 name = "leanpostgres"
 git = "https://github.com/paulbutcher/leanpostgres"
