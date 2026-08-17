@@ -96,6 +96,78 @@ private def readBody (socket : TCP.Socket.Client) (buffered : ByteArray) (length
     | some chunk => acc := acc ++ chunk
   pure (acc.extract 0 length)
 
+/-- The outcome of decoding as much of a chunked body as has arrived so far. -/
+inductive Chunked where
+  | complete (body : ByteArray)
+  | needMore
+  | malformed (reason : String)
+deriving BEq
+
+private def isCrlfAt (bytes : ByteArray) (i : Nat) : Bool :=
+  bytes[i]? == some 13 && bytes[i + 1]? == some 10
+
+private def crlfFrom (bytes : ByteArray) (start : Nat) : Option Nat :=
+  (List.range' start (bytes.size - start)).find? (isCrlfAt bytes)
+
+/-- A chunk-size line is hex, optionally followed by `;` and extensions this decoder ignores. -/
+private def chunkSize? (line : ByteArray) : Option Nat := do
+  let text ← String.fromUTF8? line
+  let digits := (text.splitOn ";").headD text |>.trimAscii.toString
+  if digits.isEmpty then none else
+    digits.foldl (init := some 0) fun acc c => do
+      let acc ← acc
+      let d ←
+        if '0' ≤ c ∧ c ≤ '9' then some (c.toNat - '0'.toNat)
+        else if 'a' ≤ c ∧ c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+        else if 'A' ≤ c ∧ c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+        else none
+      some (acc * 16 + d)
+
+/-- Reassembles a `Transfer-Encoding: chunked` body, reporting `needMore` rather than failing when
+`bytes` holds only part of one, so a caller can read again and retry. Trailers are skipped: the
+runtime API has no use for them and nothing here reads them. -/
+def decodeChunked (bytes : ByteArray) : Chunked := Id.run do
+  let mut pos := 0
+  let mut body := ByteArray.empty
+  while true do
+    let some lineEnd := crlfFrom bytes pos | return .needMore
+    let some size := chunkSize? (bytes.extract pos lineEnd)
+      | return .malformed s!"unreadable chunk size at byte {pos}"
+    let dataStart := lineEnd + 2
+    if size == 0 then
+      -- The body ends at the blank line closing the (possibly empty) trailer section.
+      let mut trailer := dataStart
+      while true do
+        if isCrlfAt bytes trailer then
+          return .complete body
+        let some next := crlfFrom bytes trailer | return .needMore
+        trailer := next + 2
+      return .needMore
+    if bytes.size < dataStart + size + 2 then
+      return .needMore
+    if !isCrlfAt bytes (dataStart + size) then
+      return .malformed s!"chunk of {size} bytes is not followed by CRLF"
+    body := body ++ bytes.extract dataStart (dataStart + size)
+    pos := dataStart + size + 2
+  return .malformed "unterminated chunked body"
+
+private def readChunked (socket : TCP.Socket.Client) (buffered : ByteArray) : Api ByteArray := do
+  let mut acc := buffered
+  let mut closed := false
+  while true do
+    match decodeChunked acc with
+    | .complete body => return body
+    | .malformed reason => throw s!"the runtime API sent a malformed chunked body: {reason}"
+    | .needMore =>
+      if closed then
+        throw "the runtime API closed the connection mid-chunk"
+      if acc.size > maxResponseBytes then
+        throw "the runtime API response body exceeds the read limit"
+      match ← socket.recv? readChunkSize with
+      | none => closed := true
+      | some chunk => acc := acc ++ chunk
+  throw "unterminated chunked body"
+
 private def parseHead (text : String) : Except String (Nat × Array (String × String)) := do
   match text.splitOn "\r\n" with
   | [] => throw "empty runtime API response head"
@@ -129,10 +201,14 @@ private def request (endpoint : Endpoint) (method path : String) (body : Option 
     | throw "the runtime API response head is not valid UTF-8"
   let (status, headers) ← parseHead text
   let header (name : String) := (headers.find? (·.1 == name)).map (·.2)
-  if let some encoding := header "transfer-encoding" then
-    throw s!"the runtime API used an unsupported transfer-encoding: {encoding}"
-  let body ← readBody socket (buffered.extract bodyStart buffered.size)
-    ((header "content-length").bind (·.toNat?))
+  let rest := buffered.extract bodyStart buffered.size
+  let chunked := ((header "transfer-encoding").map (·.toLower.splitOn ",")).getD []
+    |>.any (·.trimAscii.toString == "chunked")
+  let body ←
+    if chunked then
+      readChunked socket rest
+    else
+      readBody socket rest ((header "content-length").bind (·.toNat?))
   pure { status, headers, body }
 
 /-- An invocation, paired with the id every subsequent call about it has to quote. -/
@@ -179,8 +255,10 @@ def run (handler : StatelessHandler) (endpoint : Endpoint) : Async Unit := do
   while true do
     match ← (next endpoint).run with
     | .error e =>
-      -- With no request id there is no invocation endpoint to report this against.
-      IO.eprintln s!"lambda: could not fetch the next invocation: {e}"
+      -- There is no invocation to report this against, and continuing would retry immediately
+      -- for the rest of the environment's life, logging on every pass. Exiting hands the problem
+      -- to Lambda, which replaces the environment.
+      throw <| IO.userError s!"could not fetch the next invocation: {e}"
     | .ok invocation =>
       let outcome ←
         try (invoke handler invocation.event).run

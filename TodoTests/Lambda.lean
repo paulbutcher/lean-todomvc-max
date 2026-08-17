@@ -83,6 +83,39 @@ theorem requestHeaders_ignores_client_values (event : Event) (name value : Strin
 -- Only a literal address is understood, so a name has to be rejected rather than half-parsed.
 #guard (Endpoint.ofString "localhost:9001").isNone
 
+private def chunked (s : String) : Chunked := decodeChunked s.toUTF8
+
+private def decoded (s : String) : Option String :=
+  match chunked s with
+  | .complete body => String.fromUTF8? body
+  | _ => none
+
+-- Real Lambda sends invocation events with `Transfer-Encoding: chunked` once they are large
+-- enough, which is why a browser's request failed where a smaller one succeeded.
+#guard decoded "5\r\nhello\r\n0\r\n\r\n" == some "hello"
+#guard decoded "5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n" == some "hello world"
+#guard decoded "0\r\n\r\n" == some ""
+
+-- Sizes are hex, and a chunk may carry extensions that mean nothing here.
+#guard decoded "1a\r\nabcdefghijklmnopqrstuvwxyz\r\n0\r\n\r\n" == some "abcdefghijklmnopqrstuvwxyz"
+#guard decoded "5;name=value\r\nhello\r\n0\r\n\r\n" == some "hello"
+
+-- Trailers are skipped rather than rejected.
+#guard decoded "5\r\nhello\r\n0\r\nSome-Trailer: x\r\n\r\n" == some "hello"
+
+-- A body carrying CRLF of its own must be taken by length, not by scanning for a delimiter.
+#guard decoded "7\r\na\r\nb\r\nc\r\n0\r\n\r\n" == some "a\r\nb\r\nc"
+
+-- Anything short of the terminator has to ask for more input instead of guessing, so that a
+-- partial read off the socket is retried rather than truncated.
+#guard chunked "5\r\nhel" == .needMore
+#guard chunked "5\r\nhello\r\n" == .needMore
+#guard chunked "5\r\nhello\r\n0\r\n" == .needMore
+#guard chunked "" == .needMore
+
+#guard chunked "zz\r\nhello\r\n0\r\n\r\n" matches .malformed _
+#guard chunked "5\r\nhelloXX0\r\n\r\n" matches .malformed _
+
 #guard (ofHex? "00ff10").map (·.toList) == some [0, 255, 16]
 #guard (ofHex? "DeadBeef").map (·.toList) == some [222, 173, 190, 239]
 #guard (ofHex? "").map (·.size) == some 0
