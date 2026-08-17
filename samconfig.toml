@@ -6,7 +6,7 @@ resolve_s3 = true
 s3_prefix = "todomvc"
 resolve_image_repos = true
 region = "us-east-1"
-confirm_changeset = true
+confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
 
 [default.global.parameters]
