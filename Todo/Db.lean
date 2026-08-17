@@ -51,13 +51,17 @@ def toggleAll (db : Conn) : IO Unit :=
 def clearCompleted (db : Conn) : IO Unit :=
   db exec!"DELETE FROM todos WHERE completed"
 
-def store (db : Conn) : Store where
-  list := list db
-  add := add db
-  toggle := toggle db
-  delete := delete db
-  setTitle := setTitle db
-  toggleAll := toggleAll db
-  clearCompleted := clearCompleted db
+/-- One borrow per operation, which is the unit each of these is: a borrow is the extent over
+which the pool guarantees a live connection, and `toggleAll`'s count and update have to see the
+same one for its transaction to mean anything. Nothing here sets session state, so nothing depends
+on a later borrow landing on the same connection. -/
+def store (pool : Pool) : Store where
+  list filter := pool.withConnAsync (list · filter)
+  add title := pool.withConnAsync (add · title)
+  toggle id := pool.withConnAsync (toggle · id)
+  delete id := pool.withConnAsync (delete · id)
+  setTitle id title := pool.withConnAsync (setTitle · id title)
+  toggleAll := pool.withConnAsync toggleAll
+  clearCompleted := pool.withConnAsync clearCompleted
 
 end Todo.Db

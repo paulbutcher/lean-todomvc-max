@@ -24,6 +24,26 @@ def sessionStore : IO Middleware.CookieStore := do
     throw (IO.userError s!"SESSION_KEY decodes to {key.size} bytes, but AES-256 needs 32")
   Middleware.CookieStore.new { key := some key }
 
+/-- Only timeouts: everything identifying the database comes from the `PG*` variables the
+deployment sets, and libpq has no environment variable for either of these.
+
+`tcp_user_timeout` is what makes a broken connection discoverable here at all. The execution
+environment is frozen between invocations, so a connection can be silently dropped by the network
+in front of it with no close ever delivered; without a bound the operating system retransmits for
+several minutes, far longer than the function's own timeout. Keepalives are the usual companion to
+this and are deliberately absent: nothing can be sent while the environment is frozen, which is
+precisely the period the flow goes away in.
+
+Both are well inside the function timeout even if a borrow has to wait out one and then open a
+fresh connection. -/
+def conninfo : String := "connect_timeout=5 tcp_user_timeout=5000"
+
+/-- Lambda runs one invocation at a time per execution environment, and `Lambda.run` serves them
+sequentially, so one connection is all that can ever be in use. Capacity here is multiplied by the
+function's reserved concurrency to give the load the database sees, which is the reason not to
+round it up for comfort. -/
+def poolSize : Nat := 1
+
 /-- Anything that fails before the first invocation is reported to the runtime API's init
 endpoint rather than just logged, so the environment is torn down immediately instead of
 accepting an invocation it has no working database connection to serve. -/
@@ -34,11 +54,11 @@ def main : IO Unit := Async.block do
     | throw (IO.userError s!"AWS_LAMBDA_RUNTIME_API is not a host:port address: {advertised}")
   let started ←
     try
-      let db ← Postgres.open ""
-      Todo.migrate db
+      let pool ← Postgres.Pool.create conninfo poolSize
+      Postgres.Pool.withConnAsync pool Todo.migrate
       let sessions ← sessionStore
       -- A function URL is reachable over https only, so TLS termination is a given here.
-      pure (Except.ok (Todo.server (Todo.Db.store db) sessions (https := true)))
+      pure (Except.ok (Todo.server (Todo.Db.store pool) sessions (https := true)))
     catch e =>
       pure (Except.error (toString e))
   match started with

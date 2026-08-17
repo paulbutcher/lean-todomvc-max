@@ -3,6 +3,10 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
+import Std.Async.Basic
+
+open Std.Async (Async)
+
 namespace Todo
 
 structure Item where
@@ -24,14 +28,18 @@ def normalisedTitle (raw : String) : Option String :=
   if title.isEmpty then none else some title
 
 /-- The storage operations the handlers need, named rather than reached for directly, so that
-they can be driven by an in-memory implementation with no database behind it. -/
+they can be driven by an in-memory implementation with no database behind it.
+
+`Std.Async.Async` rather than `IO` because an implementation backed by a connection pool has to be
+able to wait for a free connection, and a handler is one fiber among many sharing an OS thread:
+blocking that thread to wait would stall every unrelated request sharing it. -/
 structure Store where
-  list : Filter → IO (Array Item)
-  add : String → IO Unit
-  toggle : Int64 → IO Unit
-  delete : Int64 → IO Unit
-  setTitle : Int64 → String → IO Unit
-  toggleAll : IO Unit
-  clearCompleted : IO Unit
+  list : Filter → Async (Array Item)
+  add : String → Async Unit
+  toggle : Int64 → Async Unit
+  delete : Int64 → Async Unit
+  setTitle : Int64 → String → Async Unit
+  toggleAll : Async Unit
+  clearCompleted : Async Unit
 
 end Todo

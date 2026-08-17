@@ -12,11 +12,16 @@ namespace TodoTests
 
 open Todo
 open Postgres
+open Std.Async (Async)
 
 /-- Runs `action` against a schema of this run's own, so a test run never touches the tables the
 application itself uses, and concurrent runs against one server stay out of each other's way.
-Dropping first covers the remains of an earlier run that was killed before it could clean up. -/
-private def withTestSchema (action : Conn → IO α) : IO α := do
+Dropping first covers the remains of an earlier run that was killed before it could clean up.
+
+The schema name is passed on as well as being set here, because `SET search_path` reaches only
+this connection and a test wanting a pool has to put the schema where every connection in it will
+pick the schema up. -/
+private def withTestSchema (action : Conn → String → IO α) : IO α := do
   let db ← Postgres.open ""
   let schema := s!"todomvc_test_{← IO.Process.getPID}"
   execScript db s!"DROP SCHEMA IF EXISTS {schema} CASCADE;
@@ -24,7 +29,7 @@ private def withTestSchema (action : Conn → IO α) : IO α := do
     SET search_path TO {schema}"
   try
     Todo.migrate db
-    action db
+    action db schema
   finally
     execScript db s!"DROP SCHEMA IF EXISTS {schema} CASCADE"
 
@@ -75,11 +80,33 @@ private def testListFiltersAndClearCompleted (db : Conn) : IO Unit :=
     Db.clearCompleted db
     checkEq "clearCompleted removes only completed rows" #["b"] (titlesOf (← Db.list db .all))
 
+/-- A `Store` reaching the same schema through a pool rather than through one connection. -/
+private def storeFor (schema : String) : IO Store := do
+  Db.store <$> Pool.create s!"options='-c search_path={schema}'" 4
+
+/-- Every request the server accepts is handled in its own fiber, so store operations genuinely
+overlap; a libpq connection cannot be used concurrently, which is what the pool behind `Db.store`
+is there for. Twelve overlapping writes through a pool of four must all take effect exactly once,
+where a store sharing a single connection between them corrupts the protocol instead. -/
+private def testConcurrentWrites (db : Conn) (schema : String) : IO Unit :=
+  withEmptyTable db do
+    let store ← storeFor schema
+    let writes := 12
+    let tasks ← (List.range writes).toArray.mapM fun i =>
+      IO.asTask (Async.block (store.add s!"item {i}"))
+    for task in tasks do
+      match ← IO.wait task with
+      | .ok _ => pure ()
+      | .error e => throw e
+    checkEq "every overlapping write landed exactly once" writes
+      (← Async.block (store.list .all)).size
+
 def runDbTests : IO Unit :=
-  withTestSchema fun db => do
+  withTestSchema fun db schema => do
     testAddStoresWhatNormalisationAdmits db
     testSetTitleBlankDeletes db
     testToggleAll db
     testListFiltersAndClearCompleted db
+    testConcurrentWrites db schema
 
 end TodoTests

@@ -10,6 +10,7 @@ import TodoTests.Harness
 namespace TodoTests
 
 open Todo
+open Std.Async (Async)
 open Std.Http.Internal.Test
 
 /-- A `Store` the handler tests can drive directly. What the queries in `Todo.Db` do with the
@@ -32,16 +33,17 @@ private def memoryStore (initial : Array Item) : IO Store := do
       if let some title := normalisedTitle raw then
         let id ← nextId.modifyGet fun id => (id, id + 1)
         items.modify (·.push { id, title, completed := false })
-    toggle := fun id => modifyItem id fun item => { item with completed := !item.completed }
-    delete := remove
-    setTitle := fun id raw =>
+    toggle := fun id => do
+      modifyItem id fun item => { item with completed := !item.completed }
+    delete := fun id => do remove id
+    setTitle := fun id raw => do
       match normalisedTitle raw with
       | none => remove id
       | some title => modifyItem id ({ · with title })
     toggleAll := do
       let anyActive := (← items.get).any (!·.completed)
       items.modify (·.map ({ · with completed := anyActive }))
-    clearCompleted := items.modify (·.filter (!·.completed))
+    clearCompleted := do items.modify (·.filter (!·.completed))
   }
 
 private def active : Item := { id := 1, title := "alpha", completed := false }
@@ -86,7 +88,7 @@ private def testCreateWithoutATitle : IO Unit := do
   check "POST /todos" (mkPost "/todos" "" "Connection: close\x0d\n") (Todo.app store).onRequest
     fun response => do
       assertStatus response "HTTP/1.1 400"
-  checkEq "nothing was created" (0 : Nat) (← store.list .all).size
+  checkEq "nothing was created" (0 : Nat) (← Async.block (store.list .all)).size
 
 private def serverOf (https : Bool) : IO TestHandler := do
   let store ← memoryStore #[]
