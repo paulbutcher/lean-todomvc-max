@@ -44,10 +44,20 @@ function's reserved concurrency to give the load the database sees, which is the
 round it up for comfort. -/
 def poolSize : Nat := 1
 
+/-- Startup is on a 10 second budget that nothing here can raise, and exceeding it costs a
+duplicate run of everything below, so where the time goes has to be visible without a redeploy to
+find out. The elapsed figures cover only what this function does; the interval between the log
+line for the first of them and the start of the init phase is what the process spent getting as
+far as `main`, and that is recoverable only by comparing timestamps outside the process. -/
+private def elapsed (start : Nat) (step : String) : IO Unit := do
+  IO.eprintln s!"init: {step} at {(← IO.monoMsNow) - start}ms"
+
 /-- Anything that fails before the first invocation is reported to the runtime API's init
 endpoint rather than just logged, so the environment is torn down immediately instead of
 accepting an invocation it has no working database connection to serve. -/
 def main : IO Unit := Async.block do
+  let start ← IO.monoMsNow
+  elapsed start "entered main"
   let some advertised ← IO.getEnv "AWS_LAMBDA_RUNTIME_API"
     | throw (IO.userError "AWS_LAMBDA_RUNTIME_API is not set")
   let some endpoint := Lambda.Endpoint.ofString advertised
@@ -55,8 +65,11 @@ def main : IO Unit := Async.block do
   let started ←
     try
       let pool ← Postgres.Pool.create conninfo poolSize
+      elapsed start "pool created"
       Postgres.Pool.withConnAsync pool Todo.migrate
+      elapsed start "migrations applied"
       let sessions ← sessionStore
+      elapsed start "session store ready"
       -- A function URL is reachable over https only, so TLS termination is a given here.
       pure (Except.ok (Todo.server (Todo.Db.store pool) sessions (https := true)))
     catch e =>
