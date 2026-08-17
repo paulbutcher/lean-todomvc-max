@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 import Html
 import Htmx
-import Todo.Db
+import Todo.Store
 import Todo.Links
 
 namespace Todo

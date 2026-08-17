@@ -35,9 +35,9 @@ def main : IO Unit := Async.block do
   let started ←
     try
       let db ← Postgres.open ""
-      Todo.initSchema db
+      Todo.Db.initSchema db
       let sessions ← sessionStore
-      pure (Except.ok (Todo.server db sessions))
+      pure (Except.ok (Todo.server (Todo.Db.store db) sessions))
     catch e =>
       pure (Except.error (toString e))
   match started with

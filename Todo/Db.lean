@@ -4,17 +4,14 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
 import Postgres
+import Todo.Store
 
-namespace Todo
+namespace Todo.Db
 
 open Postgres
 open Postgres.Interpolation
 
-structure Item where
-  id : Int64
-  title : String
-  completed : Bool
-deriving Repr, Postgres.Row
+deriving instance Postgres.Row for Item
 
 def initSchema (db : Conn) : IO Unit :=
   db exec!"
@@ -24,12 +21,6 @@ def initSchema (db : Conn) : IO Unit :=
       completed BOOLEAN NOT NULL DEFAULT FALSE
     )"
 
-inductive Filter where
-  | all
-  | active
-  | completed
-deriving Repr, BEq
-
 def list (db : Conn) (filter : Filter) : IO (Array Item) := do
   let stmt ← match filter with
     | .all => prepare db "SELECT id, title, completed FROM todos ORDER BY id"
@@ -37,13 +28,10 @@ def list (db : Conn) (filter : Filter) : IO (Array Item) := do
     | .completed => prepare db "SELECT id, title, completed FROM todos WHERE completed ORDER BY id"
   stmt.results.toArray
 
-def add (db : Conn) (title : String) : IO Unit := do
-  let title := title.trimAscii.toString
-  -- TodoMVC spec: don't add blank todos.
-  if title.isEmpty then
-    pure ()
-  else
-    db exec!"INSERT INTO todos (title) VALUES ({title})"
+def add (db : Conn) (title : String) : IO Unit :=
+  match normalisedTitle title with
+  | none => pure ()
+  | some title => db exec!"INSERT INTO todos (title) VALUES ({title})"
 
 def toggle (db : Conn) (id : Int64) : IO Unit :=
   db exec!"UPDATE todos SET completed = NOT completed WHERE id = {id}"
@@ -51,12 +39,10 @@ def toggle (db : Conn) (id : Int64) : IO Unit :=
 def delete (db : Conn) (id : Int64) : IO Unit :=
   db exec!"DELETE FROM todos WHERE id = {id}"
 
-def setTitle (db : Conn) (id : Int64) (title : String) : IO Unit := do
-  let title := title.trimAscii.toString
-  if title.isEmpty then
-    delete db id
-  else
-    db exec!"UPDATE todos SET title = {title} WHERE id = {id}"
+def setTitle (db : Conn) (id : Int64) (title : String) : IO Unit :=
+  match normalisedTitle title with
+  | none => delete db id
+  | some title => db exec!"UPDATE todos SET title = {title} WHERE id = {id}"
 
 /-- TodoMVC's "toggle all" semantics: complete everything if anything's active, otherwise reset
 all to active. -/
@@ -73,4 +59,13 @@ def toggleAll (db : Conn) : IO Unit :=
 def clearCompleted (db : Conn) : IO Unit :=
   db exec!"DELETE FROM todos WHERE completed"
 
-end Todo
+def store (db : Conn) : Store where
+  list := list db
+  add := add db
+  toggle := toggle db
+  delete := delete db
+  setTitle := setTitle db
+  toggleAll := toggleAll db
+  clearCompleted := clearCompleted db
+
+end Todo.Db

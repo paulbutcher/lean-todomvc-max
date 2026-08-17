@@ -1,7 +1,7 @@
 name = "todomvc"
 version = "0.1.0"
-defaultTargets = ["TodoMVC", "bootstrap", "Todo"]
-testDriver = "TodoTests"
+defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests"]
+testDriver = "tests"
 
 [leanOptions]
 warningAsError = true
@@ -45,6 +45,10 @@ name = "Lambda"
 
 [[lean_lib]]
 name = "TodoTests"
+
+[[lean_exe]]
+name = "tests"
+root = "TodoTests"
 
 [[lean_exe]]
 name = "TodoMVC"

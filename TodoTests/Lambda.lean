@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 import Lambda
 import Middleware
+import TodoTests.Harness
 
 namespace TodoTests
 
@@ -92,10 +93,6 @@ theorem requestHeaders_ignores_client_values (event : Event) (name value : Strin
 -- 32 byte key comes to; if either number moves without the other, sessions stop being readable.
 #guard (ofHex? (String.ofList (List.replicate 64 'a'))).map (·.size) == some 32
 
-private def checkEq [BEq α] [Repr α] (label : String) (expected actual : α) : IO Unit :=
-  unless expected == actual do
-    throw <| IO.userError s!"{label}: expected {repr expected}, got {repr actual}"
-
 private def bodyOf (text : String) : IO String := do
   let .ok event := parseEvent text | throw (IO.userError s!"could not parse event: {text}")
   pure (String.fromUTF8? event.body |>.getD "<not utf-8>")
@@ -109,8 +106,6 @@ private def base64Event : String :=
 private def testBodies : IO Unit := do
   checkEq "plain body" "title=Buy+milk" (← bodyOf spoofedEvent)
   checkEq "base64 body" "title=Buy+milk" (← bodyOf base64Event)
-
-#eval testBodies
 
 private def field (payload : Json) (name : String) : String :=
   ((payload.getObjVal? name).toOption.getD .null).compress
@@ -133,6 +128,8 @@ private def testResponseCookies : IO Unit := do
     "{\"content-type\":\"text/html\"}" (field payload "headers")
   checkEq "the status travels as a number" "200" (field payload "statusCode")
 
-#eval testResponseCookies
+def runLambdaTests : IO Unit := do
+  testBodies
+  testResponseCookies
 
 end TodoTests

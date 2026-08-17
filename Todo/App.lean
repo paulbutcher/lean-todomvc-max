@@ -4,11 +4,10 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
 import Std.Http.Server
-import Postgres
 import Html
 import Routing
 import Middleware
-import Todo.Db
+import Todo.Store
 import Todo.Links
 import Todo.Views
 
@@ -21,31 +20,32 @@ open Routes
 
 namespace Todo
 
-def render (db : Postgres.Conn) (filter : Filter)
+def render (store : Store) (filter : Filter)
     (renderHtml : Array Item → Array Item → Filter → String) :
     ContextAsync (Response Body.Any) := do
-  let items ← list db filter
-  let allItems ← list db .all
+  let items ← store.list filter
+  let allItems ← store.list .all
   renderHtml items allItems filter |> Response.ok.html
 
 /-- Renders the fragment for whichever filter the client is currently viewing, per the
 `HX-Current-URL` header HTMX sends with every request. -/
-def renderMutation (db : Postgres.Conn) (req : Request Body.Stream) :
+def renderMutation (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) :=
   let currentFilter := match req.line.headers.get? (.ofString! "hx-current-url") with
   | some v => filterFromPath v.value
   | none => .all
-  render db currentFilter mutationFragment
+  render store currentFilter mutationFragment
 
-def pageHandler (filter : Filter) (db : Postgres.Conn) (req : Request Body.Stream) :
+def pageHandler (filter : Filter) (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) :=
-  render db filter (pageView ((req.extensions.get AntiForgeryToken).map (·.value)))
+  render store filter (pageView ((req.extensions.get AntiForgeryToken).map (·.value)))
 
-/-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the DB changes), so unlike
-every other route below it targets and returns just that one item, not the whole list section. -/
-def editHandler (db : Postgres.Conn) (id : Nat) (_req : Request Body.Stream) :
+/-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the store changes), so
+unlike every other route below it targets and returns just that one item, not the whole list
+section. -/
+def editHandler (store : Store) (id : Nat) (_req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  let items ← list db .all
+  let items ← store.list .all
   match items.find? (fun item => item.id == Int64.ofNat id) with
   | some item => Node.render (itemEditView item) |> Response.ok.html
   | none => "Not Found" |> Response.notFound.text
@@ -53,40 +53,40 @@ def editHandler (db : Postgres.Conn) (id : Nat) (_req : Request Body.Stream) :
 def title? (req : Request Body.Stream) : Option String :=
   (req.extensions.get Params).bind (·.get "title")
 
-def addHandler (db : Postgres.Conn) (req : Request Body.Stream) :
+def addHandler (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
   match title? req with
-  | some title => add db title; renderMutation db req
+  | some title => store.add title; renderMutation store req
   | none => "Missing title" |> Response.badRequest.text
 
-def saveHandler (db : Postgres.Conn) (id : Nat) (req : Request Body.Stream) :
+def saveHandler (store : Store) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
   match title? req with
-  | some title => setTitle db (Int64.ofNat id) title; renderMutation db req
+  | some title => store.setTitle (Int64.ofNat id) title; renderMutation store req
   | none => "Missing title" |> Response.badRequest.text
 
-def toggleHandler (db : Postgres.Conn) (id : Nat) (req : Request Body.Stream) :
+def toggleHandler (store : Store) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  toggle db (Int64.ofNat id)
-  renderMutation db req
+  store.toggle (Int64.ofNat id)
+  renderMutation store req
 
-def deleteHandler (db : Postgres.Conn) (id : Nat) (req : Request Body.Stream) :
+def deleteHandler (store : Store) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  delete db (Int64.ofNat id)
-  renderMutation db req
+  store.delete (Int64.ofNat id)
+  renderMutation store req
 
-def toggleAllHandler (db : Postgres.Conn) (req : Request Body.Stream) :
+def toggleAllHandler (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  toggleAll db
-  renderMutation db req
+  store.toggleAll
+  renderMutation store req
 
-def clearCompletedHandler (db : Postgres.Conn) (req : Request Body.Stream) :
+def clearCompletedHandler (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  clearCompleted db
-  renderMutation db req
+  store.clearCompleted
+  renderMutation store req
 
-def app (db : Postgres.Conn) : StatelessHandler :=
-  List.map (· db) [
+def app (store : Store) : StatelessHandler :=
+  List.map (· store) [
     .get patterns.index ∘ pageHandler .all,
     .get patterns.active ∘ pageHandler .active,
     .get patterns.completed ∘ pageHandler .completed,
@@ -104,7 +104,7 @@ def app (db : Postgres.Conn) : StatelessHandler :=
 is run directly over plain http rather than behind a TLS-terminating reverse proxy; that's also
 why the session cookie can't be marked `secure`, since a `secure` cookie would never come back
 and `antiForgery` would then reject every mutation. -/
-def server [SessionStore σ] (db : Postgres.Conn) (sessions : σ) : StatelessHandler :=
+def server [SessionStore σ] (store : Store) (sessions : σ) : StatelessHandler :=
   Middleware.apply
     [forwardedScheme, forwardedRemoteAddr,
      xFrameOptions .sameOrigin, xContentTypeOptions,
@@ -119,6 +119,6 @@ def server [SessionStore σ] (db : Postgres.Conn) (sessions : σ) : StatelessHan
      defaultCharset,
      notModified,
      file "public"]
-    (app db)
+    (app store)
 
 end Todo
