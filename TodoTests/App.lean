@@ -88,11 +88,30 @@ private def testCreateWithoutATitle : IO Unit := do
       assertStatus response "HTTP/1.1 400"
   checkEq "nothing was created" (0 : Nat) (← store.list .all).size
 
+private def serverOf (https : Bool) : IO TestHandler := do
+  let store ← memoryStore #[]
+  let sessions ← Middleware.MemoryStore.new
+  pure (Todo.server store sessions (https := https)).onRequest
+
+/-- Only a deployment with something terminating TLS in front of it may mark the session cookie
+`secure` or claim `hsts`. The permissive direction is the harmful one: a `secure` cookie sent over
+plain http never comes back, and `antiForgery` then rejects every mutation. -/
+private def testTlsProfileGatesCookieAndHsts : IO Unit := do
+  check "behind a TLS terminator" (mkGetClose "/") (← serverOf true)
+    fun response => do
+      assertContains response "Strict-Transport-Security"
+      assertContains response "; Secure"
+  check "served directly over http" (mkGetClose "/") (← serverOf false)
+    fun response => do
+      assertAbsent response "Strict-Transport-Security"
+      assertAbsent response "; Secure"
+
 def runAppTests : IO Unit :=
   runGroup "Todo.App" do
     testPageFiltersItemsButCountsThemAll
     testMutationRendersTheDisplayedFilter
     testEditingAnItemThatIsGone
     testCreateWithoutATitle
+    testTlsProfileGatesCookieAndHsts
 
 end TodoTests

@@ -100,25 +100,33 @@ def app (store : Store) : StatelessHandler :=
   ] |> toHandler
 
 /-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
-`Middleware.apply`'s documented order. `hsts` and `sslRedirect` are left out because this server
-is run directly over plain http rather than behind a TLS-terminating reverse proxy; that's also
-why the session cookie can't be marked `secure`, since a `secure` cookie would never come back
-and `antiForgery` would then reject every mutation. -/
-def server [SessionStore σ] (store : Store) (sessions : σ) : StatelessHandler :=
+`Middleware.apply`'s documented order.
+
+`https` states whether something in front of this server terminates TLS, which is the only thing
+that can establish it: `Std.Http.Server` serves plain http either way. Setting it marks the
+session cookie `secure` and sends `hsts`. Claiming it falsely is the damaging direction, since a
+`secure` cookie would never come back and `antiForgery` would then reject every mutation.
+
+`sslRedirect` is absent whichever way `https` goes, because neither deployment has a plaintext
+listener to redirect a caller away from. -/
+def server [SessionStore σ] (store : Store) (sessions : σ) (https : Bool := false) :
+    StatelessHandler :=
   Middleware.apply
-    [forwardedScheme, forwardedRemoteAddr,
-     xFrameOptions .sameOrigin, xContentTypeOptions,
-     catchAll,
-     cookies,
-     session sessions
-       { cookieName := "todomvc-session",
-         cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax } },
-     params,
-     antiForgery,
-     contentType,
-     defaultCharset,
-     notModified,
-     file "public"]
+    ([forwardedScheme, forwardedRemoteAddr]
+      ++ (if https then [hsts] else [])
+      ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
+          catchAll,
+          cookies,
+          session sessions
+            { cookieName := "todomvc-session",
+              cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
+                               secure := https } },
+          params,
+          antiForgery,
+          contentType,
+          defaultCharset,
+          notModified,
+          file "public"])
     (app store)
 
 end Todo

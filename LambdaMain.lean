@@ -37,7 +37,8 @@ def main : IO Unit := Async.block do
       let db ← Postgres.open ""
       Todo.migrate db
       let sessions ← sessionStore
-      pure (Except.ok (Todo.server (Todo.Db.store db) sessions))
+      -- A function URL is reachable over https only, so TLS termination is a given here.
+      pure (Except.ok (Todo.server (Todo.Db.store db) sessions (https := true)))
     catch e =>
       pure (Except.error (toString e))
   match started with
