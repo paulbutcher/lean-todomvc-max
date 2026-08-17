@@ -13,14 +13,6 @@ open Postgres.Interpolation
 
 deriving instance Postgres.Row for Item
 
-def initSchema (db : Conn) : IO Unit :=
-  db exec!"
-    CREATE TABLE IF NOT EXISTS todos (
-      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      title TEXT NOT NULL,
-      completed BOOLEAN NOT NULL DEFAULT FALSE
-    )"
-
 def list (db : Conn) (filter : Filter) : IO (Array Item) := do
   let stmt ← match filter with
     | .all => prepare db "SELECT id, title, completed FROM todos ORDER BY id"

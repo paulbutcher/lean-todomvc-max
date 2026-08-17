@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 import Postgres
 import Todo.Db
+import Todo.Migrations
 import TodoTests.Harness
 
 namespace TodoTests
@@ -22,7 +23,7 @@ private def withTestSchema (action : Conn → IO α) : IO α := do
     CREATE SCHEMA {schema};
     SET search_path TO {schema}"
   try
-    Db.initSchema db
+    Todo.migrate db
     action db
   finally
     execScript db s!"DROP SCHEMA IF EXISTS {schema} CASCADE"

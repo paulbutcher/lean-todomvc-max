@@ -13,7 +13,7 @@ open Std Http Server
 
 def main : IO Unit := Async.block do
   let db ← Postgres.open ""
-  Todo.Db.initSchema db
+  Todo.migrate db
   let sessions ← Middleware.MemoryStore.new
   let addr := .v4 ⟨.ofParts 127 0 0 1, 0⟩
   let server ← serve addr (Todo.server (Todo.Db.store db) sessions)

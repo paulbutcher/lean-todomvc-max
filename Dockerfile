@@ -37,8 +37,10 @@ RUN dnf install -y libpq && dnf clean all
 
 COPY --from=build /src/.lake/build/bin/bootstrap /var/task/bootstrap
 COPY public /var/task/public
+COPY migrations /var/task/migrations
 
-# The `file` middleware resolves "public" against the working directory.
+# The `file` middleware resolves "public" against the working directory, as does the migration
+# runner "migrations".
 WORKDIR /var/task
 
 # The base image's entrypoint execs /var/task/bootstrap when it exists, and wraps it in the

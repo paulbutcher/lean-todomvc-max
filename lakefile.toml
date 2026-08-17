@@ -1,6 +1,6 @@
 name = "todomvc"
 version = "0.1.0"
-defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests"]
+defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests", "migrate"]
 testDriver = "tests"
 
 [leanOptions]
@@ -32,6 +32,12 @@ git = "https://github.com/paulbutcher/lean-middleware"
 rev = "v0.3.0"
 
 [[require]]
+name = "leanmigratePostgres"
+git = "https://github.com/paulbutcher/leanmigrate"
+rev = "v0.4.0"
+subDir = "postgres"
+
+[[require]]
 name = "middleware-cookiestore"
 git = "https://github.com/paulbutcher/lean-middleware"
 rev = "v0.3.0"
@@ -49,6 +55,11 @@ name = "TodoTests"
 [[lean_exe]]
 name = "tests"
 root = "TodoTests"
+
+[[lean_exe]]
+name = "migrate"
+srcDir = "dev"
+root = "Migrate"
 
 [[lean_exe]]
 name = "TodoMVC"

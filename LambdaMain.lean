@@ -35,7 +35,7 @@ def main : IO Unit := Async.block do
   let started ←
     try
       let db ← Postgres.open ""
-      Todo.Db.initSchema db
+      Todo.migrate db
       let sessions ← sessionStore
       pure (Except.ok (Todo.server (Todo.Db.store db) sessions))
     catch e =>
