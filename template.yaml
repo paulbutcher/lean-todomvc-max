@@ -4,17 +4,12 @@ Transform: AWS::Serverless-2016-10-31
 Description: TodoMVC in Lean, on a Lambda function URL backed by RDS Postgres.
 
 Parameters:
-  TelemetryEndpoint:
-    Type: String
+  FunctionMemory:
+    Type: Number
+    Default: 1024
     Description: >-
-      OTLP/HTTP base URL the in-function collector forwards to. The function itself never sees
-      this: it speaks to the collector over loopback, and the collector reaches the backend.
-  TelemetryApiKey:
-    Type: String
-    NoEcho: true
-    Description: >-
-      Credential for that endpoint. Sent as the `authorization` header; a backend wanting a
-      differently named header needs collector.yaml changed as well as this set.
+      A parameter rather than a literal because the telemetry resource reports it as
+      `faas.max_memory`, and a second copy of the number would be free to drift from the first.
 
 Resources:
   # Both the function and the database sit in this VPC so the database needs no public address.
@@ -110,7 +105,7 @@ Resources:
     Properties:
       PackageType: Image
       Architectures: [arm64]
-      MemorySize: 1024
+      MemorySize: !Ref FunctionMemory
       Timeout: 20
       # Every warm instance holds a Postgres connection open, and db.t4g.micro allows on the
       # order of a hundred in total.
@@ -134,25 +129,25 @@ Resources:
           # complaint. `verify-full` would additionally need the RDS CA bundle in the image.
           PGSSLMODE: require
           SESSION_KEY: !Sub "{{resolve:secretsmanager:${SessionKey}:SecretString}}"
-          # The collector is an extension in this image, not a layer: Lambda will not attach a
-          # layer to a container-image function.
-          OPENTELEMETRY_COLLECTOR_CONFIG_URI: /var/task/collector.yaml
-          TELEMETRY_ENDPOINT: !Ref TelemetryEndpoint
-          TELEMETRY_API_KEY: !Ref TelemetryApiKey
           OTEL_SERVICE_NAME: todomvc
-          # OTLP to the collector on loopback. The file exporter is no use here: the collector
-          # build that runs in Lambda has an `otlp` receiver and a `telemetryapi` one, and nothing
-          # that reads from disk.
-          OTEL_TRACES_EXPORTER: otlp
-          OTEL_LOGS_EXPORTER: otlp
-          OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318
+          # Telemetry leaves as OTLP/JSON on stdout, which the runtime forwards to CloudWatch
+          # Logs. That path belongs to the Lambda service rather than to this function's network
+          # interface, so it is the one way out of a VPC with no egress, and it is why there is no
+          # collector here. Reaching anything beyond CloudWatch is a subscription filter's job,
+          # and that also runs outside this VPC.
+          #
+          # Giving stdout to the machine costs the readable format, which no one is watching in a
+          # deployed function; a developer running locally sets none of this and still gets it.
+          OTEL_TRACES_EXPORTER: console
+          OTEL_LOGS_EXPORTER: console
+          OTEL_EXPORTER_CONSOLE_FORMAT: otlp_json
           # What is settled at deployment. `faas.instance` is not, and the function supplies it
           # itself; see `LambdaMain.instanceAttrs`. `host.name` goes undetected either way, since
           # Lambda sets no `HOSTNAME`.
           OTEL_RESOURCE_ATTRIBUTES: !Sub
             - "cloud.provider=aws,cloud.platform=aws_lambda,cloud.region=${AWS::Region},faas.name=${Name},faas.max_memory=${Memory}"
             - Name: !Sub "${AWS::StackName}"
-              Memory: 1024
+              Memory: !Ref FunctionMemory
     Metadata:
       Dockerfile: Dockerfile
       DockerContext: .
