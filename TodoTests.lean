@@ -5,8 +5,6 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 import TodoTests.App
 import TodoTests.Db
-import TodoTests.Lambda
-import TodoTests.Runtime
 import TodoTests.Store
 import TodoTests.Views
 
@@ -16,8 +14,6 @@ namespace TodoTests
 checked by the time this builds, so only the ones that need to execute appear here. -/
 def runAll : IO Unit := do
   runAppTests
-  runLambdaTests
-  runRuntimeTests
   runDbTests
   IO.println "All tests passed."
 

@@ -3,7 +3,7 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
-import Lambda
+import AwsLambdaHttp
 import Middleware
 import MiddlewareCookieStore
 import Postgres
@@ -18,7 +18,7 @@ instance served the page would be unreadable by whichever instance served the ne
 def sessionStore : IO Middleware.CookieStore := do
   let some encoded ← IO.getEnv "SESSION_KEY"
     | throw (IO.userError "SESSION_KEY is not set")
-  let some key := Lambda.ofHex? encoded
+  let some key := AwsLambda.ofHex? encoded
     | throw (IO.userError "SESSION_KEY is not an even-length run of hex digits")
   if key.size != 32 then
     throw (IO.userError s!"SESSION_KEY decodes to {key.size} bytes, but AES-256 needs 32")
@@ -38,32 +38,18 @@ Both are well inside the function timeout even if a borrow has to wait out one a
 fresh connection. -/
 def conninfo : String := "connect_timeout=5 tcp_user_timeout=5000"
 
-/-- Lambda runs one invocation at a time per execution environment, and `Lambda.run` serves them
+/-- Lambda runs one invocation at a time per execution environment, and the runtime serves them
 sequentially, so one connection is all that can ever be in use. Capacity here is multiplied by the
 function's reserved concurrency to give the load the database sees, which is the reason not to
 round it up for comfort. -/
 def poolSize : Nat := 1
 
-/-- Anything that fails before the first invocation is reported to the runtime API's init
-endpoint rather than just logged, so the environment is torn down immediately instead of
-accepting an invocation it has no working database connection to serve. -/
-def main : IO Unit := Async.block do
-  let some advertised ← IO.getEnv "AWS_LAMBDA_RUNTIME_API"
-    | throw (IO.userError "AWS_LAMBDA_RUNTIME_API is not set")
-  let some endpoint := Lambda.Endpoint.ofString advertised
-    | throw (IO.userError s!"AWS_LAMBDA_RUNTIME_API is not a host:port address: {advertised}")
-  let started ←
-    try
-      let pool ← Postgres.Pool.create conninfo poolSize
-      Postgres.Pool.withConnAsync pool Todo.migrate
-      let sessions ← sessionStore
-      -- A function URL is reachable over https only, so TLS termination is a given here.
-      pure (Except.ok (Todo.server (Todo.Db.store pool) sessions (https := true)))
-    catch e =>
-      pure (Except.error (toString e))
-  match started with
-  | .error e =>
-    discard <| (Lambda.postInitError endpoint e).run
-    throw (IO.userError e)
-  | .ok handler =>
-    Lambda.run handler endpoint
+/-- Anything raised here happens before the first invocation, and `AwsLambda.serve` reports it to
+the runtime API's init endpoint rather than just logging it, so the environment is torn down
+immediately instead of accepting an invocation it has no working database connection to serve. -/
+def main : IO Unit := AwsLambda.serve do
+  let pool ← Postgres.Pool.create conninfo poolSize
+  Postgres.Pool.withConnAsync pool Todo.migrate
+  let sessions ← sessionStore
+  -- A function URL is reachable over https only, so TLS termination is a given here.
+  pure (AwsLambda.Http.handler (Todo.server (Todo.Db.store pool) sessions (https := true)))

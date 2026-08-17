@@ -7,6 +7,12 @@ testDriver = "tests"
 warningAsError = true
 
 [[require]]
+name = "awsLambda-http"
+git = "https://github.com/paulbutcher/lean-aws-lambda"
+rev = "v0.1.0"
+subDir = "http"
+
+[[require]]
 name = "leanpostgres"
 git = "https://github.com/paulbutcher/leanpostgres"
 rev = "v0.5.0"
@@ -45,9 +51,6 @@ subDir = "cookiestore"
 
 [[lean_lib]]
 name = "Todo"
-
-[[lean_lib]]
-name = "Lambda"
 
 [[lean_lib]]
 name = "TodoTests"

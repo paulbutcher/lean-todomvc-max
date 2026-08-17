@@ -20,7 +20,7 @@ RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh \
 # Dependencies are fetched and built before this project's own sources are copied in, so editing
 # a handler doesn't rebuild the libraries underneath it.
 COPY lakefile.toml lake-manifest.json ./
-RUN lake build Postgres Html Htmx Routing Middleware MiddlewareCookieStore
+RUN lake build Postgres Html Htmx Routing Middleware MiddlewareCookieStore AwsLambdaHttp
 
 # Everything else the context still holds after .dockerignore has had its say, so adding or
 # renaming a source file needs no change here.
