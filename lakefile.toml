@@ -18,6 +18,11 @@ git = "https://github.com/paulbutcher/leanpostgres"
 rev = "v0.5.0"
 
 [[require]]
+name = "telemetry"
+git = "https://github.com/paulbutcher/lean-telemetry"
+rev = "v0.2.0"
+
+[[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
 rev = "v0.6.0"

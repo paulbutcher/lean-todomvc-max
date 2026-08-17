@@ -13,6 +13,7 @@ namespace TodoTests
 open Todo
 open Postgres
 open Std.Async (Async)
+open Telemetry (runTelemetry)
 
 /-- Runs `action` against a schema of this run's own, so a test run never touches the tables the
 application itself uses, and concurrent runs against one server stay out of each other's way.
@@ -93,13 +94,13 @@ private def testConcurrentWrites (db : Conn) (schema : String) : IO Unit :=
     let store ← storeFor schema
     let writes := 12
     let tasks ← (List.range writes).toArray.mapM fun i =>
-      IO.asTask (Async.block (store.add s!"item {i}"))
+      IO.asTask (Async.block (runTelemetry (store.add s!"item {i}")))
     for task in tasks do
       match ← IO.wait task with
       | .ok _ => pure ()
       | .error e => throw e
     checkEq "every overlapping write landed exactly once" writes
-      (← Async.block (store.list .all)).size
+      (← Async.block (runTelemetry (store.list .all))).size
 
 def runDbTests : IO Unit :=
   withTestSchema fun db schema => do

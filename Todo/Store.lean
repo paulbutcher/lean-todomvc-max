@@ -4,8 +4,10 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
 import Std.Async.Basic
+import Telemetry
 
 open Std.Async (Async)
+open Telemetry (TelemetryT)
 
 namespace Todo
 
@@ -32,14 +34,19 @@ they can be driven by an in-memory implementation with no database behind it.
 
 `Std.Async.Async` rather than `IO` because an implementation backed by a connection pool has to be
 able to wait for a free connection, and a handler is one fiber among many sharing an OS thread:
-blocking that thread to wait would stall every unrelated request sharing it. -/
+blocking that thread to wait would stall every unrelated request sharing it.
+
+`TelemetryT` over that because `Std.Http.Server` fixes the monad a handler runs in, so there is
+nowhere for the span an operation should hang under to travel implicitly. The reader layer here is
+how a caller names it; a caller with nothing to say passes `none` and the operation's own spans
+become roots. -/
 structure Store where
-  list : Filter → Async (Array Item)
-  add : String → Async Unit
-  toggle : Int64 → Async Unit
-  delete : Int64 → Async Unit
-  setTitle : Int64 → String → Async Unit
-  toggleAll : Async Unit
-  clearCompleted : Async Unit
+  list : Filter → TelemetryT Async (Array Item)
+  add : String → TelemetryT Async Unit
+  toggle : Int64 → TelemetryT Async Unit
+  delete : Int64 → TelemetryT Async Unit
+  setTitle : Int64 → String → TelemetryT Async Unit
+  toggleAll : TelemetryT Async Unit
+  clearCompleted : TelemetryT Async Unit
 
 end Todo

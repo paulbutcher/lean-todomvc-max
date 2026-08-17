@@ -9,6 +9,7 @@ import Routing
 import Middleware
 import Todo.Store
 import Todo.Links
+import Todo.Tracing
 import Todo.Views
 
 open Std Async
@@ -17,14 +18,15 @@ open Html
 open Routing
 open Middleware
 open Routes
+open Telemetry (SpanContext)
 
 namespace Todo
 
-def render (store : Store) (filter : Filter)
+def render (store : Store) (parent : Option SpanContext) (filter : Filter)
     (renderHtml : Array Item → Array Item → Filter → String) :
     ContextAsync (Response Body.Any) := do
-  let items ← store.list filter
-  let allItems ← store.list .all
+  let items ← (store.list filter).run parent
+  let allItems ← (store.list .all).run parent
   renderHtml items allItems filter |> Response.ok.html
 
 /-- Renders the fragment for whichever filter the client is currently viewing, per the
@@ -34,18 +36,19 @@ def renderMutation (store : Store) (req : Request Body.Stream) :
   let currentFilter := match req.line.headers.get? (.ofString! "hx-current-url") with
   | some v => filterFromPath v.value
   | none => .all
-  render store currentFilter mutationFragment
+  render store (parentSpan req) currentFilter mutationFragment
 
 def pageHandler (filter : Filter) (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) :=
-  render store filter (pageView ((req.extensions.get AntiForgeryToken).map (·.value)))
+  render store (parentSpan req) filter
+    (pageView ((req.extensions.get AntiForgeryToken).map (·.value)))
 
 /-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the store changes), so
 unlike every other route below it targets and returns just that one item, not the whole list
 section. -/
-def editHandler (store : Store) (id : Nat) (_req : Request Body.Stream) :
+def editHandler (store : Store) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  let items ← store.list .all
+  let items ← (store.list .all).run (parentSpan req)
   match items.find? (fun item => item.id == Int64.ofNat id) with
   | some item => Node.render (itemEditView item) |> Response.ok.html
   | none => "Not Found" |> Response.notFound.text
@@ -56,33 +59,34 @@ def title? (req : Request Body.Stream) : Option String :=
 def addHandler (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
   match title? req with
-  | some title => store.add title; renderMutation store req
+  | some title => (store.add title).run (parentSpan req); renderMutation store req
   | none => "Missing title" |> Response.badRequest.text
 
 def saveHandler (store : Store) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
   match title? req with
-  | some title => store.setTitle (Int64.ofNat id) title; renderMutation store req
+  | some title =>
+    (store.setTitle (Int64.ofNat id) title).run (parentSpan req); renderMutation store req
   | none => "Missing title" |> Response.badRequest.text
 
 def toggleHandler (store : Store) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  store.toggle (Int64.ofNat id)
+  (store.toggle (Int64.ofNat id)).run (parentSpan req)
   renderMutation store req
 
 def deleteHandler (store : Store) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  store.delete (Int64.ofNat id)
+  (store.delete (Int64.ofNat id)).run (parentSpan req)
   renderMutation store req
 
 def toggleAllHandler (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  store.toggleAll
+  store.toggleAll.run (parentSpan req)
   renderMutation store req
 
 def clearCompletedHandler (store : Store) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
-  store.clearCompleted
+  store.clearCompleted.run (parentSpan req)
   renderMutation store req
 
 def app (store : Store) : StatelessHandler :=
@@ -99,8 +103,18 @@ def app (store : Store) : StatelessHandler :=
     .delete patterns.clearCompleted ∘ clearCompletedHandler
   ] |> toHandler
 
+/-- The route template the router matched, as `serverSpan` wants it. The router publishes it on
+the response as well as the request, which is the copy that reaches anything wrapping it. -/
+private def matchedPattern (extensions : Extensions) : Option String :=
+  (matchedRoute? extensions).map (renderPattern ·.segs)
+
 /-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
 `Middleware.apply`'s documented order.
+
+`serverSpan` is not part of that order. It goes directly inside `catchAll` so that an exception
+reaches it, and is reported with the message it carried, rather than arriving as a `500` that says
+only that something failed. What that costs is the timing of the layers above it, all of which are
+header manipulation that does no I/O.
 
 `https` states whether something in front of this server terminates TLS, which is the only thing
 that can establish it: `Std.Http.Server` serves plain http either way. Setting it marks the
@@ -116,6 +130,7 @@ def server [SessionStore σ] (store : Store) (sessions : σ) (https : Bool := fa
       ++ (if https then [hsts] else [])
       ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
           catchAll,
+          serverSpan matchedPattern,
           cookies,
           session sessions
             { cookieName := "todomvc-session",

@@ -7,9 +7,11 @@ import AwsLambdaHttp
 import Middleware
 import MiddlewareCookieStore
 import Postgres
+import Telemetry.Sdk
 import Todo
 
 open Std Async
+open Telemetry
 
 /-- The key has to outlive any one execution environment. Letting `CookieStore` mint its own
 would give each concurrently running instance a different one, so a session sealed by whichever
@@ -44,12 +46,29 @@ function's reserved concurrency to give the load the database sees, which is the
 round it up for comfort. -/
 def poolSize : Nat := 1
 
+/-- `faas.instance` identifies the execution environment, which only the process itself can
+report: a log stream belongs to one environment and its name arrives in that environment. Anything
+else the resource wants about the function is settled when the function is deployed and is set
+there, through `OTEL_RESOURCE_ATTRIBUTES`. -/
+def instanceAttrs : IO Attrs := do
+  let some stream ← IO.getEnv "AWS_LAMBDA_LOG_STREAM_NAME" | return []
+  return [("faas.instance", .str stream)]
+
 /-- Anything raised here happens before the first invocation, and `AwsLambda.serve` reports it to
 the runtime API's init endpoint rather than just logging it, so the environment is torn down
-immediately instead of accepting an invocation it has no working database connection to serve. -/
+immediately instead of accepting an invocation it has no working database connection to serve.
+Installing telemetry first puts a misconfigured exporter, which the SDK raises on rather than
+starting quietly without, on that same footing.
+
+Migrating is the one thing here worth a span of its own: it runs on every cold start, and the
+environment is frozen the moment the first invocation is answered, so it is otherwise invisible.
+
+There is no matching `Sdk.shutdown`. Nothing tells the function its environment is about to go,
+and nothing is buffered for one to flush. -/
 def main : IO Unit := AwsLambda.serve do
+  Sdk.installFromEnv (extraAttrs := ← instanceAttrs)
   let pool ← Postgres.Pool.create conninfo poolSize
-  Postgres.Pool.withConnAsync pool Todo.migrate
+  runTelemetry (spanning "migrate" (liftM (Postgres.Pool.withConnAsync pool Todo.migrate)))
   let sessions ← sessionStore
   -- A function URL is reachable over https only, so TLS termination is a given here.
   pure (AwsLambda.Http.handler (Todo.server (Todo.Db.store pool) sessions (https := true)))
