@@ -97,10 +97,7 @@ Resources:
     Properties:
       PackageType: Image
       Architectures: [arm64]
-      # Far more than the ~120MB actually resident. Lambda scales vCPU and network bandwidth with
-      # memory, and startup is spent loading a large binary out of the container image rather than
-      # running anything, so this is bought for the bandwidth and not for the memory.
-      MemorySize: 3008
+      MemorySize: 1024
       Timeout: 20
       # Every warm instance holds a Postgres connection open, and db.t4g.micro allows on the
       # order of a hundred in total.
