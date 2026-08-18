@@ -3,8 +3,8 @@
 Tracking document for integrating [lean-telemetry](https://github.com/paulbutcher/lean-telemetry)
 v0.2.0 into this application. Delete once the work has landed and settled.
 
-Instrumentation is complete and exercised locally. The deployment is prepared but has never been
-deployed; see "Not yet true" at the end.
+Instrumentation is complete, exercised locally, and deployed. What has not been looked at since
+the deploy is listed under "Not yet true" at the end.
 
 ## The constraint everything follows from
 
@@ -134,8 +134,8 @@ a log stream name belongs to one execution environment and arrives in that envir
 
 ## Not yet true
 
-- **Nothing has been deployed.** `sam deploy` has never been run. The image builds and the
-  template validates, and that is the whole of the evidence.
+- **The deploy has happened and the function is healthy**, but nothing beyond that has been
+  checked. What follows is answerable now rather than blocked.
 - **CloudWatch has never been queried.** OTLP/JSON is deeply nested, so Logs Insights over
   `resourceSpans[].scopeSpans[].spans[]` will be clumsy. How clumsy is unknown, and it is the main
   thing that would push us towards a subscription filter and a real backend.
@@ -159,8 +159,6 @@ a log stream name belongs to one execution environment and arrives in that envir
 - Locally the "Listening on" line is interleaved with the JSON, so the stream is not strictly
   JSONL. `LambdaMain` prints nothing, so the deployed stream should be clean, but a subscription
   filter parsing every line would need to tolerate the exception.
-- lean-telemetry reports its scope version as `0.1.0` in OTLP output while the package is at
-  `0.2.0`. Upstream nit.
 
 ## Noticed while instrumenting
 
