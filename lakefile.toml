@@ -40,7 +40,7 @@ rev = "v0.5.0"
 [[require]]
 name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.3.0"
+rev = "v0.4.0"
 
 [[require]]
 name = "leanmigratePostgres"
@@ -51,8 +51,14 @@ subDir = "postgres"
 [[require]]
 name = "middleware-cookiestore"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.3.0"
+rev = "v0.4.0"
 subDir = "cookiestore"
+
+[[require]]
+name = "middleware-tracing"
+git = "https://github.com/paulbutcher/lean-middleware"
+rev = "v0.4.0"
+subDir = "tracing"
 
 [[lean_lib]]
 name = "Todo"

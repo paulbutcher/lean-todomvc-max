@@ -7,9 +7,9 @@ import Std.Http.Server
 import Html
 import Routing
 import Middleware
+import MiddlewareTracing
 import Todo.Store
 import Todo.Links
-import Todo.Tracing
 import Todo.Views
 
 open Std Async
@@ -110,11 +110,6 @@ private def matchedPattern (extensions : Extensions) : Option String :=
 
 /-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
 `Middleware.apply`'s documented order.
-
-`serverSpan` is not part of that order. It goes directly inside `catchAll` so that an exception
-reaches it, and is reported with the message it carried, rather than arriving as a `500` that says
-only that something failed. What that costs is the timing of the layers above it, all of which are
-header manipulation that does no I/O.
 
 `https` states whether something in front of this server terminates TLS, which is the only thing
 that can establish it: `Std.Http.Server` serves plain http either way. Setting it marks the

@@ -26,7 +26,7 @@ seeded from there.
 | Span propagation | `SpanContext` in request `extensions` | The only channel available; the handler monad is fixed by Std. |
 | `Store` monad | `TelemetryT Async` | Confines the seam to `Todo.App`; the alternative was an extra parent argument on every operation. |
 | DB instrumentation | At our `Store` boundary | Cheap and ours. Pool-borrow visibility would need leanpostgres to go `MonadTelemetry`-polymorphic. |
-| Server-span middleware | Implemented here, extracted later | Generic enough for lean-middleware, but not worth moving before we have seen the traces. |
+| Server-span middleware | `middleware-tracing`, upstream | Extracted once the traces showed what it should carry. A package beside `cookiestore` rather than `middleware` itself, so that lean-telemetry and its `leancurl` requirement stay out of every application using any middleware at all. |
 | Route template | `routeName` callback parameter | Keeps a middleware/routing dependency edge out of the eventual extraction. |
 | Stack position | Inside `catchAll` | The span sees the exception and keeps its message; `catchAll` stays telemetry-unaware. |
 | Local export | Console, pretty | Nothing to configure; readable in the terminal. |
@@ -143,14 +143,13 @@ a log stream name belongs to one execution environment and arrives in that envir
 
 ## Deferred
 
-- **Extracting `serverSpan` into lean-middleware.** Once the traces have said what the span should
-  carry.
 - **`catchAll` emitting an error log record.** It swallows the exception today, which is
   reasonable while our span sits inside it and reports the cause itself.
 - **W3C `traceparent` propagation.** Not implemented upstream, so our traces are always roots.
   Related: `AwsLambda.Api` discards the runtime API's `Lambda-Runtime-Trace-Id`.
-- **Sampling.** Not implemented. The server span covers static asset requests as well as real
-  routes, which on the stdout route is a log line each.
+- **Skipping static assets.** Every request served by `file` gets a span, and on the stdout route
+  that is a log line each. `serverSpan` now takes a `skip` predicate for exactly this; we pass
+  none, because it is not worth choosing a rule before the ingestion volume is known.
 - **Pool-borrow timing.** Needs `Postgres.Pool` to hand out a borrow as a value rather than only
   as a bracket.
 

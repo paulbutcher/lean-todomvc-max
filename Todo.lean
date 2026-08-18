@@ -7,6 +7,5 @@ import Todo.Store
 import Todo.Db
 import Todo.Migrations
 import Todo.Links
-import Todo.Tracing
 import Todo.Views
 import Todo.App
