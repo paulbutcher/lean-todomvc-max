@@ -103,11 +103,6 @@ def app (store : Store) : StatelessHandler :=
     .delete patterns.clearCompleted ∘ clearCompletedHandler
   ] |> toHandler
 
-/-- The route template the router matched, as `serverSpan` wants it. The router publishes it on
-the response as well as the request, which is the copy that reaches anything wrapping it. -/
-private def matchedPattern (extensions : Extensions) : Option String :=
-  (matchedRoute? extensions).map (renderPattern ·.segs)
-
 /-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
 `Middleware.apply`'s documented order.
 
@@ -125,7 +120,7 @@ def server [SessionStore σ] (store : Store) (sessions : σ) (https : Bool := fa
       ++ (if https then [hsts] else [])
       ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
           catchAll,
-          serverSpan matchedPattern,
+          serverSpan matchedPattern?,
           cookies,
           session sessions
             { cookieName := "todomvc-session",

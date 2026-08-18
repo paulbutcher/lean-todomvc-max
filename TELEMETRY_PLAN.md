@@ -27,7 +27,7 @@ seeded from there.
 | `Store` monad | `TelemetryT Async` | Confines the seam to `Todo.App`; the alternative was an extra parent argument on every operation. |
 | DB instrumentation | At our `Store` boundary | Cheap and ours. Pool-borrow visibility would need leanpostgres to go `MonadTelemetry`-polymorphic. |
 | Server-span middleware | `middleware-tracing`, upstream | Extracted once the traces showed what it should carry. A package beside `cookiestore` rather than `middleware` itself, so that lean-telemetry and its `leancurl` requirement stay out of every application using any middleware at all. |
-| Route template | `routeName` callback parameter | Keeps a middleware/routing dependency edge out of the eventual extraction. |
+| Route template | `Routing.matchedPattern?` | Passed to `serverSpan` as its `routeName` callback, which is what keeps a routing dependency out of `middleware-tracing`. Renders `/todos/:id`, not `renderPattern`'s `/todos/:id:Nat`: an endpoint's identity must not move when a capture's kind changes, since no client can observe that but every dashboard keyed on the route would break. |
 | Stack position | Inside `catchAll` | The span sees the exception and keeps its message; `catchAll` stays telemetry-unaware. |
 | Local export | Console, pretty | Nothing to configure; readable in the terminal. |
 | Deployed export | Console, `otlp_json`, to CloudWatch Logs | The only way out of a VPC with no egress, and it needs no collector. See below. |
@@ -155,10 +155,6 @@ a log stream name belongs to one execution environment and arrives in that envir
 
 ## Open questions
 
-- What should `http.route` look like? `Routing.renderPattern` gives `/todos/:id:Nat`, which
-  carries the capture's type. Correct and low-cardinality, but not the conventional spelling, and
-  it is what the span is named by, so it is the first thing anyone reading a trace will see. A
-  template spelling without the type would have to come from routing.
 - `faas.version` is absent. There is no static value for it at deploy time without an alias.
 - Locally the "Listening on" line is interleaved with the JSON, so the stream is not strictly
   JSONL. `LambdaMain` prints nothing, so the deployed stream should be clean, but a subscription
