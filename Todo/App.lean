@@ -3,14 +3,18 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
-import Std.Http.Server
-import Html
-import Routing
-import Middleware
-import MiddlewareTracing
-import Todo.Store
-import Todo.Links
-import Todo.Views
+module
+
+public import Std.Http.Server
+public import Html
+public import Routing
+public import Middleware
+public import MiddlewareTracing
+public import Todo.Store
+public import Todo.Links
+public import Todo.Views
+
+public section
 
 open Std Async
 open Std Http Server

@@ -3,9 +3,13 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
-import Postgres
-import Leanmigrate
-import LeanmigratePostgres
+module
+
+public import Postgres
+public import Leanmigrate
+public import LeanmigratePostgres
+
+public section
 
 namespace Todo
 

@@ -3,12 +3,16 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
-import AwsLambdaHttp
-import Middleware
-import MiddlewareCookieStore
-import Postgres
-import Telemetry.Sdk
-import Todo
+module
+
+public import AwsLambdaHttp
+public import Middleware
+public import MiddlewareCookieStore
+public import Postgres
+public import Telemetry.Sdk
+public import Todo
+
+public section
 
 open Std Async
 open Telemetry

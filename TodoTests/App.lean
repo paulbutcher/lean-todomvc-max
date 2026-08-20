@@ -3,9 +3,13 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
-import Std.Http.Test.Helpers
-import Todo.App
-import TodoTests.Harness
+module
+
+public import Std.Http.Test.Helpers
+public import Todo.App
+public import TodoTests.Harness
+
+public section
 
 namespace TodoTests
 

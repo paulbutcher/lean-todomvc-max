@@ -9,55 +9,55 @@ warningAsError = true
 [[require]]
 name = "awsLambda-http"
 git = "https://github.com/paulbutcher/lean-aws-lambda"
-rev = "v0.1.0"
+rev = "v0.3.0"
 subDir = "http"
 
 [[require]]
 name = "leanpostgres"
 git = "https://github.com/paulbutcher/leanpostgres"
-rev = "v0.5.0"
+rev = "v0.6.1"
 
 [[require]]
 name = "telemetry"
 git = "https://github.com/paulbutcher/lean-telemetry"
-rev = "v0.2.0"
+rev = "v0.3.0"
 
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.6.0"
+rev = "v0.7.0"
 
 [[require]]
 name = "htmx"
 git = "https://github.com/paulbutcher/lean-htmx"
-rev = "v0.5.0"
+rev = "v0.6.0"
 
 [[require]]
 name = "routing"
 git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.6.0"
+rev = "v0.7.0"
 
 [[require]]
 name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.5.0"
+rev = "v0.6.0"
 
 [[require]]
 name = "leanmigratePostgres"
 git = "https://github.com/paulbutcher/leanmigrate"
-rev = "v0.4.0"
+rev = "v0.5.0"
 subDir = "postgres"
 
 [[require]]
 name = "middleware-cookiestore"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.5.0"
+rev = "v0.6.0"
 subDir = "cookiestore"
 
 [[require]]
 name = "middleware-tracing"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.5.0"
+rev = "v0.6.0"
 subDir = "tracing"
 
 [[lean_lib]]

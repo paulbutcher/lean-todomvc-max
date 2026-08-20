@@ -3,11 +3,15 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
-import TodoTests.App
-import TodoTests.Db
-import TodoTests.Store
-import TodoTests.Tracing
-import TodoTests.Views
+module
+
+public import TodoTests.App
+public import TodoTests.Db
+public import TodoTests.Store
+public import TodoTests.Tracing
+public import TodoTests.Views
+
+public section
 
 namespace TodoTests
 

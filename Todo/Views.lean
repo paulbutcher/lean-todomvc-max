@@ -3,10 +3,14 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 
-import Html
-import Htmx
-import Todo.Store
-import Todo.Links
+module
+
+public import Html
+public import Htmx
+public import Todo.Store
+public import Todo.Links
+
+@[expose] public section
 
 namespace Todo
 
