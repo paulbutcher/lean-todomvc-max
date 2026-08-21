@@ -1,2 +1,3 @@
 .lake
 .aws-sam
+samconfig.toml
