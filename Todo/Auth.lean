@@ -11,6 +11,7 @@ public import AuthenticationHttp
 public import AuthenticationPostgres
 public import Postgres
 public import Middleware
+public import Todo.AuthViews
 public import Todo.Tenant
 
 public section
@@ -142,6 +143,7 @@ def config (s : Site) : TenantConfig Todo.tenant := tenantConfig s.settings Todo
 is the library's requirement and costs nothing here: there is only ever one. -/
 def http (s : Site) : Authentication.Http.Config where
   ports := s.ports
+  pages := Todo.pages
   tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
 
 end Site

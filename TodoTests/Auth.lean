@@ -17,7 +17,8 @@ open Authentication
 open Std.Http.Internal.Test
 
 private def message (subject : String) : OutboundEmail :=
-  { «from» := { address := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩, displayName := "todos" }
+  { «from» :=
+      { address := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩, displayName := "todos" }
     to := ⟨"alice", ⟨["example", "com"]⟩⟩
     subject
     textBody := "a link"

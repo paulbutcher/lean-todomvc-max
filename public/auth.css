@@ -1,0 +1,98 @@
+/* What the sign-in pages need beyond todomvc-app-css, which styles a list and not a form.
+   The palette is that stylesheet's own so the two read as one application. */
+
+.auth {
+  padding: 24px 20px 28px;
+}
+
+.auth h2 {
+  margin: 0 0 14px;
+  font-size: 22px;
+  font-weight: 300;
+  color: #4d4d4d;
+}
+
+.auth p {
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.auth label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #949494;
+}
+
+.auth input[type="email"],
+.auth input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  font-family: inherit;
+  font-size: 20px;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: 2px;
+  box-shadow: inset 0 -1px 5px 0 rgba(0, 0, 0, 0.06);
+}
+
+.auth input:focus {
+  outline: none;
+  border-color: #b83f45;
+  box-shadow: 0 0 2px 2px #cf7d7d;
+}
+
+.auth button {
+  margin-top: 18px;
+  padding: 12px 22px;
+  font-family: inherit;
+  font-size: 16px;
+  color: #fff;
+  background: #b83f45;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.auth button:hover {
+  background: #a03238;
+}
+
+/* The cross-device code entry. Collapsed because it applies to one way of arriving here and
+   not the usual one, and an open field asks to be filled in. */
+.auth .aside {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #ededed;
+}
+
+.auth .aside summary {
+  color: #b83f45;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.auth .aside p {
+  margin-top: 14px;
+  font-size: 14px;
+  color: #777;
+}
+
+/* The code the other device displays, which somebody is reading off one screen and typing
+   into another. */
+.auth .code {
+  display: block;
+  margin: 24px 0;
+  font-size: 38px;
+  letter-spacing: 0.12em;
+  text-align: center;
+  color: #4d4d4d;
+}
+
+.auth .warn {
+  color: #b83f45;
+}

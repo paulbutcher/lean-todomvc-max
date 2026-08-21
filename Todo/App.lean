@@ -40,9 +40,6 @@ private def withHeader (response : Response Body.Any) (name : Header.Name) (valu
     line := { response.line with
       headers := response.line.headers.insert name (headerValue value) } }
 
-private def signInPath : String :=
-  Authentication.BaseUrl.tenantPath Todo.tenant ++ "/signin"
-
 /-- Where a request with no session is sent. A path the tenant does not allow back to becomes its
 default, so naming the current one costs nothing and returns whoever was reading a filtered list
 to that list.
