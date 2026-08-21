@@ -1,6 +1,6 @@
 name = "todomvc"
 version = "0.1.0"
-defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests", "migrate"]
+defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests", "migrate", "logs"]
 testDriver = "tests"
 
 [leanOptions]
@@ -20,7 +20,7 @@ rev = "v0.6.1"
 [[require]]
 name = "telemetry"
 git = "https://github.com/paulbutcher/lean-telemetry"
-rev = "v0.3.0"
+rev = "v0.4.0"
 
 [[require]]
 name = "html"
@@ -71,6 +71,12 @@ name = "Todo"
 [[lean_lib]]
 name = "TodoTests"
 
+# `LogsMain` is the executable; this is what it renders with, kept apart so the test suite can
+# reach it, the same split as `Todo` and `Main`.
+[[lean_lib]]
+name = "Logs"
+srcDir = "dev"
+
 [[lean_exe]]
 name = "tests"
 root = "TodoTests"
@@ -79,6 +85,11 @@ root = "TodoTests"
 name = "migrate"
 srcDir = "dev"
 root = "Migrate"
+
+[[lean_exe]]
+name = "logs"
+srcDir = "dev"
+root = "LogsMain"
 
 [[lean_exe]]
 name = "TodoMVC"

@@ -220,17 +220,24 @@ Resources:
           BASE_URL: !Ref BaseUrl
           MAIL_FROM: !Ref MailFrom
           OTEL_SERVICE_NAME: todomvc
-          # Telemetry leaves as OTLP/JSON on stdout, which the runtime forwards to CloudWatch
-          # Logs. That path belongs to the Lambda service rather than to this function's network
+          # Telemetry leaves as JSON on stdout, which the runtime forwards to CloudWatch Logs.
+          # That path belongs to the Lambda service rather than to this function's network
           # interface, so it is the one way out of a VPC with no egress, and it is why there is no
           # collector here. Reaching anything beyond CloudWatch is a subscription filter's job,
           # and that also runs outside this VPC.
           #
-          # Giving stdout to the machine costs the readable format, which no one is watching in a
-          # deployed function; a developer running locally sets none of this and still gets it.
+          # `flat_json` rather than `otlp_json` because Logs Insights has to be able to address a
+          # field, and an OTLP envelope buries an attribute at an index that varies per span and
+          # states the resource once per batch rather than on the row. One self-contained object
+          # per span is the difference between a log group that can be queried like a trace store
+          # and one that is a transcript.
+          #
+          # Giving stdout to the machine costs the readable format. `lake exe logs` renders it
+          # back for a terminal, and a developer running locally sets none of this and has it
+          # directly.
           OTEL_TRACES_EXPORTER: console
           OTEL_LOGS_EXPORTER: console
-          OTEL_EXPORTER_CONSOLE_FORMAT: otlp_json
+          OTEL_EXPORTER_CONSOLE_FORMAT: flat_json
           # What is settled at deployment. `faas.instance` is not, and the function supplies it
           # itself; see `LambdaMain.instanceAttrs`. `host.name` goes undetected either way, since
           # Lambda sets no `HOSTNAME`.

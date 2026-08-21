@@ -8,6 +8,7 @@ module
 public import TodoTests.App
 public import TodoTests.Auth
 public import TodoTests.Db
+public import TodoTests.Logs
 public import TodoTests.Store
 public import TodoTests.Tracing
 public import TodoTests.Views
@@ -22,6 +23,7 @@ def runAll : IO Unit := do
   runAppTests
   runAuthTests
   runTracingTests
+  runLogsTests
   runDbTests
   IO.println "All tests passed."
 
