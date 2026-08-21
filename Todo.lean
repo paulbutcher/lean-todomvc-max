@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 module
 
+public import Todo.Tenant
+public import Todo.Auth
 public import Todo.Store
 public import Todo.Db
 public import Todo.Migrations

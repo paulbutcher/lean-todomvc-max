@@ -20,43 +20,57 @@ open Telemetry
 
 deriving instance Postgres.Row for Item
 
-def list (db : Conn) (filter : Filter) : IO (Array Item) := do
+def list (db : Conn) (account : Account) (filter : Filter) : IO (Array Item) := do
+  let owner := account.value
   let stmt ← match filter with
-    | .all => prepare db "SELECT id, title, completed FROM todos ORDER BY id"
-    | .active => prepare db "SELECT id, title, completed FROM todos WHERE NOT completed ORDER BY id"
-    | .completed => prepare db "SELECT id, title, completed FROM todos WHERE completed ORDER BY id"
+    | .all =>
+      db sql!"SELECT id, title, completed FROM todos WHERE account_id = {owner} ORDER BY id"
+    | .active =>
+      db sql!"SELECT id, title, completed FROM todos
+                WHERE account_id = {owner} AND NOT completed ORDER BY id"
+    | .completed =>
+      db sql!"SELECT id, title, completed FROM todos
+                WHERE account_id = {owner} AND completed ORDER BY id"
   stmt.results.toArray
 
-def add (db : Conn) (title : String) : IO Unit :=
+def add (db : Conn) (account : Account) (title : String) : IO Unit :=
   match normalisedTitle title with
   | none => pure ()
-  | some title => db exec!"INSERT INTO todos (title) VALUES ({title})"
+  | some title =>
+    let owner := account.value
+    db exec!"INSERT INTO todos (account_id, title) VALUES ({owner}, {title})"
 
-def toggle (db : Conn) (id : Int64) : IO Unit :=
-  db exec!"UPDATE todos SET completed = NOT completed WHERE id = {id}"
+def toggle (db : Conn) (account : Account) (id : Int64) : IO Unit :=
+  let owner := account.value
+  db exec!"UPDATE todos SET completed = NOT completed WHERE id = {id} AND account_id = {owner}"
 
-def delete (db : Conn) (id : Int64) : IO Unit :=
-  db exec!"DELETE FROM todos WHERE id = {id}"
+def delete (db : Conn) (account : Account) (id : Int64) : IO Unit :=
+  let owner := account.value
+  db exec!"DELETE FROM todos WHERE id = {id} AND account_id = {owner}"
 
-def setTitle (db : Conn) (id : Int64) (title : String) : IO Unit :=
+def setTitle (db : Conn) (account : Account) (id : Int64) (title : String) : IO Unit :=
   match normalisedTitle title with
-  | none => delete db id
-  | some title => db exec!"UPDATE todos SET title = {title} WHERE id = {id}"
+  | none => delete db account id
+  | some title =>
+    let owner := account.value
+    db exec!"UPDATE todos SET title = {title} WHERE id = {id} AND account_id = {owner}"
 
 /-- TodoMVC's "toggle all" semantics: complete everything if anything's active, otherwise reset
 all to active. -/
-def toggleAll (db : Conn) : IO Unit :=
+def toggleAll (db : Conn) (account : Account) : IO Unit :=
+  let owner := account.value
   transaction db (do
-    let stmt ← prepare db "SELECT COUNT(*) FROM todos WHERE NOT completed"
+    let stmt ← db sql!"SELECT COUNT(*) FROM todos WHERE account_id = {owner} AND NOT completed"
     discard stmt.step
     let activeCount ← stmt.columnInt64 (0 : Int32)
     if activeCount > 0 then
-      db exec!"UPDATE todos SET completed = TRUE"
+      db exec!"UPDATE todos SET completed = TRUE WHERE account_id = {owner}"
     else
-      db exec!"UPDATE todos SET completed = FALSE")
+      db exec!"UPDATE todos SET completed = FALSE WHERE account_id = {owner}")
 
-def clearCompleted (db : Conn) : IO Unit :=
-  db exec!"DELETE FROM todos WHERE completed"
+def clearCompleted (db : Conn) (account : Account) : IO Unit :=
+  let owner := account.value
+  db exec!"DELETE FROM todos WHERE completed AND account_id = {owner}"
 
 /-- The span covers the borrow as well as the statements, because `Pool.withConnAsync` is the only
 way in and it does both. Waiting for a connection and running a query fail in entirely different
@@ -75,12 +89,12 @@ on a later borrow landing on the same connection.
 `setTitle` and `toggleAll` are named for the statement they exist to run; each has a second path
 (a delete, and a count that decides the direction) which the span does not separate out. -/
 def store (pool : Pool) : Store where
-  list filter := spanned pool "SELECT" (list · filter)
-  add title := spanned pool "INSERT" (add · title)
-  toggle id := spanned pool "UPDATE" (toggle · id)
-  delete id := spanned pool "DELETE" (delete · id)
-  setTitle id title := spanned pool "UPDATE" (setTitle · id title)
-  toggleAll := spanned pool "UPDATE" toggleAll
-  clearCompleted := spanned pool "DELETE" clearCompleted
+  list account filter := spanned pool "SELECT" (list · account filter)
+  add account title := spanned pool "INSERT" (add · account title)
+  toggle account id := spanned pool "UPDATE" (toggle · account id)
+  delete account id := spanned pool "DELETE" (delete · account id)
+  setTitle account id title := spanned pool "UPDATE" (setTitle · account id title)
+  toggleAll account := spanned pool "UPDATE" (toggleAll · account)
+  clearCompleted account := spanned pool "DELETE" (clearCompleted · account)
 
 end Todo.Db

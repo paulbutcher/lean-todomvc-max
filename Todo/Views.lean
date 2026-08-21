@@ -109,7 +109,21 @@ def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
 def mutationFragment (items allItems : Array Item) (filter : Filter) : String :=
   Node.render (listSection items) ++ Node.render (footerFragment allItems filter)
 
-def pageView (csrfToken : Option String) (items allItems : Array Item) (filter : Filter) : String :=
+/-- The address is what makes the session visible; the account id it hangs off says nothing to
+the person holding it. `none` only where the account has gone between being identified and being
+read, which the sign-out below is the remedy for either way. -/
+def accountFooter (address : Option String) : Node .flow :=
+  footer
+    ([ (p ["Double-click a todo to edit it."] : Node .flow) ]
+      ++ (match address with
+          | none => []
+          | some address => [(p [s!"Signed in as {address}"] : Node .flow)])
+      ++ [ (Htmx.button ["Sign out"]
+              { class_ := "sign-out", hxPost := links.signOut } : Node .flow) ])
+    { class_ := "info" }
+
+def pageView (csrfToken : Option String) (address : Option String) (items allItems : Array Item)
+    (filter : Filter) : String :=
   document
     [ head
         [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, link todomvcCss,
@@ -130,7 +144,7 @@ def pageView (csrfToken : Option String) (items allItems : Array Item) (filter :
               listSection items,
               footerFragment allItems filter ]
             { class_ := "todoapp" },
-          footer [p ["Double-click a todo to edit it."]] { class_ := "info" } ]
+          accountFooter address ]
         (rawAttrs := csrfAttrs csrfToken) ]
     (lang := "en")
 

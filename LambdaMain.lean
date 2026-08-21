@@ -6,6 +6,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import AwsLambdaHttp
+public import AuthenticationSes
 public import Middleware
 public import MiddlewareCookieStore
 public import Postgres
@@ -29,6 +30,64 @@ def sessionStore : IO Middleware.CookieStore := do
   if key.size != 32 then
     throw (IO.userError s!"SESSION_KEY decodes to {key.size} bytes, but AES-256 needs 32")
   Middleware.CookieStore.new { key := some key }
+
+/-- The pepper every credential the authentication library stores is digested under. It has to
+outlive any one execution environment for the same reason `SESSION_KEY` does, and more: a
+different one per instance would make every session and every link in flight unreadable by
+whichever instance served the next request.
+
+A rotation needs the old key kept alongside the new one for the lifetime of the longest session,
+which `PepperRing.retired` is for. Nothing here reads a second one yet, so a rotation today signs
+everyone out. -/
+def pepper : IO Authentication.Pepper := do
+  let some encoded ← IO.getEnv "AUTH_PEPPER"
+    | throw (IO.userError "AUTH_PEPPER is not set")
+  let some secret := AwsLambda.ofHex? encoded
+    | throw (IO.userError "AUTH_PEPPER is not an even-length run of hex digits")
+  if secret.size != 32 then
+    throw (IO.userError s!"AUTH_PEPPER decodes to {secret.size} bytes, and 32 are wanted")
+  let some keyId ← IO.getEnv "AUTH_PEPPER_KEY_ID"
+    | throw (IO.userError "AUTH_PEPPER_KEY_ID is not set")
+  pure { keyId := ⟨keyId⟩, secret }
+
+/-- The execution role's credentials, as the runtime publishes them.
+
+They expire. The runtime replaces these variables underneath a warm environment when it renews
+them, so this is read per send rather than once at startup; see `Todo.Auth.refreshing`. Reading it
+once is the mistake that works all the way through a deployment and then fails hours later. -/
+def awsCredentials : IO Aws.Sigv4.Credentials := do
+  let some accessKeyId ← IO.getEnv "AWS_ACCESS_KEY_ID"
+    | throw (IO.userError "AWS_ACCESS_KEY_ID is not set")
+  let some secretAccessKey ← IO.getEnv "AWS_SECRET_ACCESS_KEY"
+    | throw (IO.userError "AWS_SECRET_ACCESS_KEY is not set")
+  -- Absent only for long-lived credentials, which a role never has.
+  let sessionToken ← IO.getEnv "AWS_SESSION_TOKEN"
+  pure { accessKeyId, secretAccessKey, sessionToken }
+
+/-- Everything the mail needs that this process cannot discover for itself. The base URL is the
+origin the magic link points back at, which is the function's own and so is settled when it is
+deployed rather than here.
+
+SES needs no secret of its own: the request is signed with the role the function already runs as,
+which is why nothing here reads a provider token. -/
+def authSettings : IO Todo.Auth.Settings := do
+  let some baseUrl ← IO.getEnv "BASE_URL"
+    | throw (IO.userError "BASE_URL is not set")
+  if baseUrl.isEmpty then
+    throw (IO.userError "BASE_URL is empty, so a sign-in link would point nowhere")
+  let some sender ← IO.getEnv "MAIL_FROM"
+    | throw (IO.userError "MAIL_FROM is not set")
+  let .ok address := Authentication.EmailAddress.parse sender
+    | throw (IO.userError s!"MAIL_FROM is {sender}, which is not an email address")
+  -- Set by the runtime, and not settable in the function's own configuration.
+  let some region ← IO.getEnv "AWS_REGION"
+    | throw (IO.userError "AWS_REGION is not set")
+  pure
+    { pepper := ← pepper
+      baseUrl := ⟨baseUrl⟩
+      sender := { address, displayName := "todos" }
+      transport := Todo.Auth.refreshing awsCredentials fun credentials =>
+        Authentication.Ses.transport { region, credentials } }
 
 /-- Only timeouts: everything identifying the database comes from the `PG*` variables the
 deployment sets, and libpq has no environment variable for either of these.
@@ -74,5 +133,7 @@ def main : IO Unit := AwsLambda.serve do
   let pool ← Postgres.Pool.create conninfo poolSize
   runTelemetry (spanning "migrate" (liftM (Postgres.Pool.withConnAsync pool Todo.migrate)))
   let sessions ← sessionStore
+  let site := Todo.Auth.site pool (← authSettings)
   -- A function URL is reachable over https only, so TLS termination is a given here.
-  pure (AwsLambda.Http.handler (Todo.server (Todo.Db.store pool) sessions (https := true)))
+  pure (AwsLambda.Http.handler
+    (Todo.server site.identity site.handler (Todo.Db.store pool) sessions (https := true)))

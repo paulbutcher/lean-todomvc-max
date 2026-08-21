@@ -27,7 +27,9 @@ private def active : Item := { id := 1, title := "alpha", completed := false }
 route table. -/
 private def serverOf (store : Store) : IO TestHandler := do
   let sessions ← Middleware.MemoryStore.new
-  pure (Todo.server store sessions).onRequest
+  let auth : Std.Http.Server.StatelessHandler :=
+    { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
+  pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store sessions).onRequest
 
 private def spansFor (handler : TestHandler) (raw : String)
     (expect : ByteArray → IO Unit := fun _ => pure ()) : IO (Array SpanData) := do
@@ -42,7 +44,7 @@ private def theServerSpan (spans : Array SpanData) : IO SpanData := do
 /-- Two requests to one endpoint differing only in the id have to arrive under a single name.
 Otherwise every id is an endpoint of its own and grouping by name says nothing at all. -/
 private def testServerSpanNamesTheEndpointNotTheRequest : IO Unit := do
-  let handler ← serverOf (← memoryStore #[active])
+  let handler ← serverOf (← memoryStore alice #[active])
   let first ← theServerSpan (← spansFor handler (mkGetClose "/todos/1/edit"))
   let second ← theServerSpan (← spansFor handler (mkGetClose "/todos/2/edit"))
   checkEq "the two requests were of different paths" false
@@ -53,20 +55,20 @@ private def testServerSpanNamesTheEndpointNotTheRequest : IO Unit := do
 
 /-- Nothing matched, so there is no endpoint to name and a guess would be worse than silence. -/
 private def testUnmatchedRequestCarriesNoRoute : IO Unit := do
-  let handler ← serverOf (← memoryStore #[])
+  let handler ← serverOf (← memoryStore alice #[])
   let span ← theServerSpan (← spansFor handler (mkGetClose "/nothing-here"))
   checkEq "no route was invented" none (span.attrs.lookup Conventions.httpRoute)
 
 /-- Records the span each operation was invoked under, which is the only thing about it that
 matters here. -/
 private def spyStore (seen : IO.Ref (Array (Option SpanContext))) : Store where
-  list _ := do seen.modify (·.push (← currentSpan)); pure #[]
-  add _ := do seen.modify (·.push (← currentSpan))
-  toggle _ := do seen.modify (·.push (← currentSpan))
-  delete _ := do seen.modify (·.push (← currentSpan))
-  setTitle _ _ := do seen.modify (·.push (← currentSpan))
-  toggleAll := do seen.modify (·.push (← currentSpan))
-  clearCompleted := do seen.modify (·.push (← currentSpan))
+  list _ _ := do seen.modify (·.push (← currentSpan)); pure #[]
+  add _ _ := do seen.modify (·.push (← currentSpan))
+  toggle _ _ := do seen.modify (·.push (← currentSpan))
+  delete _ _ := do seen.modify (·.push (← currentSpan))
+  setTitle _ _ _ := do seen.modify (·.push (← currentSpan))
+  toggleAll _ := do seen.modify (·.push (← currentSpan))
+  clearCompleted _ := do seen.modify (·.push (← currentSpan))
 
 /-- A store operation runs under the request's own span. That is what makes the spans it opens
 children of the request rather than roots, and it is the fragile half of the arrangement: the
@@ -85,13 +87,13 @@ private def failWith (message : String) : TelemetryT Async α :=
 
 /-- Every operation fails, as they all would with the database unreachable. -/
 private def failingStore (message : String) : Store where
-  list _ := failWith message
-  add _ := failWith message
-  toggle _ := failWith message
-  delete _ := failWith message
-  setTitle _ _ := failWith message
-  toggleAll := failWith message
-  clearCompleted := failWith message
+  list _ _ := failWith message
+  add _ _ := failWith message
+  toggle _ _ := failWith message
+  delete _ _ := failWith message
+  setTitle _ _ _ := failWith message
+  toggleAll _ := failWith message
+  clearCompleted _ := failWith message
 
 /-- `serverSpan` sits inside `catchAll` precisely so that a failure reaches it as the exception it
 was, rather than as the `500` that carries no trace of why. Losing the cause here would be the

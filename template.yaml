@@ -11,12 +11,40 @@ Parameters:
       A parameter rather than a literal because the telemetry resource reports it as
       `faas.max_memory`, and a second copy of the number would be free to drift from the first.
 
+  BaseUrl:
+    Type: String
+    Default: ""
+    Description: >-
+      The origin a sign-in link points back at, which is this function's own URL. It cannot be
+      read from the function URL resource here: that resource depends on the function, so the
+      function's environment depending on it in turn is a cycle CloudFormation refuses. Deploy
+      once with this empty, read `Endpoint` from the outputs, and deploy again with it set.
+      Sign-in is refused until it is.
+
+  MailFrom:
+    Type: String
+    Description: >-
+      The address sign-in mail is sent from. Its domain needs SPF, DKIM, DMARC and an MX record
+      (a null MX will do) before mail is delivered rather than filed as spam.
+
+  PepperKeyId:
+    Type: String
+    Default: "1"
+    Description: >-
+      Names the pepper that digested a credential, and is recorded alongside each one. Change it
+      whenever the pepper secret changes, or the record of which key was used stops being true.
+
 Resources:
   # Both the function and the database sit in this VPC so the database needs no public address.
   VPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
+      # Both are needed before an interface endpoint's private DNS resolves, and a VPC that is not
+      # the default one has hostnames off. Without them `email.<region>.amazonaws.com` keeps
+      # resolving to the public address, which nothing in here can reach.
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
 
   # RDS insists on subnets in two availability zones even for a single-AZ instance.
   Subnet1:
@@ -43,6 +71,42 @@ Resources:
           FromPort: 5432
           ToPort: 5432
           CidrIp: !GetAtt VPC.CidrBlock
+
+  # How the function reaches SES. This stack has no internet gateway and no NAT gateway, so an
+  # interface endpoint is not the cheaper of two ways out here; it is the way that does not mean
+  # building a public egress path, and paying a standing charge for it, to carry one API call per
+  # sign-in. The traffic never leaves the AWS network either way.
+  #
+  # If the stack fails to create this, the two things to check are that SES publishes an API
+  # endpoint in the region:
+  #
+  #   aws ec2 describe-vpc-endpoint-services \
+  #     --filters Name=service-name,Values=com.amazonaws.<region>.email
+  #
+  # and that both subnets are in availability zones it serves. Either way it fails while
+  # deploying rather than at the first sign-in, which is the failure worth having.
+  SesEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "SES interface endpoint for ${AWS::StackName}"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !GetAtt VPC.CidrBlock
+
+  SesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.email"
+      VpcEndpointType: Interface
+      # What makes the hostname the signed request already names resolve here, so nothing in the
+      # application knows the difference.
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref Subnet1, !Ref Subnet2]
+      SecurityGroupIds: [!Ref SesEndpointSecurityGroup]
 
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
@@ -100,6 +164,19 @@ Resources:
         ExcludePunctuation: true
         ExcludeCharacters: "ghijklmnopqrstuvwxyz"
 
+  # The authentication library stores no credential, only an HMAC of one under this key. It has
+  # the same standing as the session key above and one more consequence: replacing it without
+  # keeping the old one alongside signs everyone out and voids every link in flight.
+  AuthPepper:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Credential pepper for ${AWS::StackName}"
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludeUppercase: true
+        ExcludePunctuation: true
+        ExcludeCharacters: "ghijklmnopqrstuvwxyz"
+
   Function:
     Type: AWS::Serverless::Function
     Properties:
@@ -115,7 +192,15 @@ Resources:
       VpcConfig:
         SecurityGroupIds: [!Ref SecurityGroup]
         SubnetIds: [!Ref Subnet1, !Ref Subnet2]
-      Policies: [AWSLambdaVPCAccessExecutionRole]
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+        # Any identity in this account and region rather than the one `MailFrom` names, because
+        # the identity behind an address may be the address or its domain, and naming the wrong
+        # one gives a stack that deploys and then refuses the first sign-in.
+        - Statement:
+            - Effect: Allow
+              Action: [ses:SendEmail]
+              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
       Environment:
         Variables:
           # `Postgres.open ""` passes an empty connection string to libpq, which then reads all
@@ -129,6 +214,10 @@ Resources:
           # complaint. `verify-full` would additionally need the RDS CA bundle in the image.
           PGSSLMODE: require
           SESSION_KEY: !Sub "{{resolve:secretsmanager:${SessionKey}:SecretString}}"
+          AUTH_PEPPER: !Sub "{{resolve:secretsmanager:${AuthPepper}:SecretString}}"
+          AUTH_PEPPER_KEY_ID: !Ref PepperKeyId
+          BASE_URL: !Ref BaseUrl
+          MAIL_FROM: !Ref MailFrom
           OTEL_SERVICE_NAME: todomvc
           # Telemetry leaves as OTLP/JSON on stdout, which the runtime forwards to CloudWatch
           # Logs. That path belongs to the Lambda service rather than to this function's network

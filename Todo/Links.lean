@@ -18,4 +18,5 @@ route_table Routes
     edit            := "/todos/:id:Nat/edit",
     toggle          := "/todos/:id:Nat/toggle",
     toggleAll       := "/todos/toggle-all",
-    clearCompleted  := "/todos/clear-completed" ]
+    clearCompleted  := "/todos/clear-completed",
+    signOut         := "/signout" ]

@@ -7,6 +7,7 @@ module
 
 public import Std.Async.Basic
 public import Telemetry
+public import Todo.Tenant
 
 @[expose] public section
 
@@ -43,14 +44,17 @@ blocking that thread to wait would stall every unrelated request sharing it.
 `TelemetryT` over that because `Std.Http.Server` fixes the monad a handler runs in, so there is
 nowhere for the span an operation should hang under to travel implicitly. The reader layer here is
 how a caller names it; a caller with nothing to say passes `none` and the operation's own spans
-become roots. -/
+become roots.
+
+Every operation names the account, mutations included, so an id belonging to somebody else
+matches nothing rather than being reached by whoever guesses it. -/
 structure Store where
-  list : Filter → TelemetryT Async (Array Item)
-  add : String → TelemetryT Async Unit
-  toggle : Int64 → TelemetryT Async Unit
-  delete : Int64 → TelemetryT Async Unit
-  setTitle : Int64 → String → TelemetryT Async Unit
-  toggleAll : TelemetryT Async Unit
-  clearCompleted : TelemetryT Async Unit
+  list : Account → Filter → TelemetryT Async (Array Item)
+  add : Account → String → TelemetryT Async Unit
+  toggle : Account → Int64 → TelemetryT Async Unit
+  delete : Account → Int64 → TelemetryT Async Unit
+  setTitle : Account → Int64 → String → TelemetryT Async Unit
+  toggleAll : Account → TelemetryT Async Unit
+  clearCompleted : Account → TelemetryT Async Unit
 
 end Todo
