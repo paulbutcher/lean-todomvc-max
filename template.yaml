@@ -11,6 +11,14 @@ Parameters:
       A parameter rather than a literal because the telemetry resource reports it as
       `faas.max_memory`, and a second copy of the number would be free to drift from the first.
 
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    Description: >-
+      How long the log group keeps what the function writes. Spans are stored there rather than
+      merely reported there, so this is the retention of the telemetry itself and not of a
+      transcript of it. CloudWatch accepts only certain values: 1, 3, 5, 7, 14, 30 and upwards.
+
   BaseUrl:
     Type: String
     Default: ""
@@ -178,9 +186,27 @@ Resources:
         ExcludePunctuation: true
         ExcludeCharacters: "ghijklmnopqrstuvwxyz"
 
+  # Declared rather than left to Lambda to create on first use, so that retention is this
+  # template's decision and so that the saved queries and the dashboard have something to be
+  # written against. The name is the one Lambda would have chosen anyway, which is what keeps
+  # `sam logs` and everything else that assumes the convention pointed at it, and it is under
+  # `/aws/lambda/`, which is the prefix the execution role's managed policy allows writing to.
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays: !Ref LogRetentionDays
+
   Function:
     Type: AWS::Serverless::Function
+    # An invocation arriving before the log group exists would have Lambda create it, and then
+    # CloudFormation would fail to create its own.
+    DependsOn: LogGroup
     Properties:
+      # Named rather than left to CloudFormation to generate one, because the log group above
+      # has to be the group Lambda writes to by default, and that name is built from this one.
+      # It also makes the `faas.name` the resource reports the name the function actually has.
+      FunctionName: !Ref AWS::StackName
       PackageType: Image
       Architectures: [arm64]
       MemorySize: !Ref FunctionMemory
@@ -232,6 +258,10 @@ Resources:
           # per span is the difference between a log group that can be queried like a trace store
           # and one that is a transcript.
           #
+          # Lambda's own JSON log format has to stay off for any of that to hold: it wraps each
+          # line in an envelope, and a span's fields would arrive nested under `message` rather
+          # than as fields of the row.
+          #
           # Giving stdout to the machine costs the readable format. `lake exe logs` renders it
           # back for a terminal, and a developer running locally sets none of this and has it
           # directly.
@@ -250,7 +280,146 @@ Resources:
       DockerContext: .
       DockerTag: latest
 
+  # The analysis loop, saved so that a reader of a fresh deployment finds it rather than has to
+  # know it exists. Each is a step: notice something, break it down by whatever looks likely,
+  # pick out the ones that are wrong, then read a single trace end to end.
+  #
+  # Nothing here aggregates in advance, which is the whole reason the function writes one flat
+  # object per span: any field on a row can be grouped by, at any cardinality, when the question
+  # is asked rather than when the code was written.
+
+  SlowestRoutesQuery:
+    Type: AWS::Logs::QueryDefinition
+    Properties:
+      Name: !Sub "${AWS::StackName}/Slowest routes"
+      LogGroupNames: [!Ref LogGroup]
+      QueryString: |
+        filter meta.signal_type = "trace" and span.kind = "server"
+        | stats count(*) as requests, pct(duration_ms, 50) as p50, pct(duration_ms, 99) as p99 by http.route
+        | sort p99 desc
+
+  SlowestRequestsQuery:
+    Type: AWS::Logs::QueryDefinition
+    Properties:
+      Name: !Sub "${AWS::StackName}/Slowest requests"
+      LogGroupNames: [!Ref LogGroup]
+      QueryString: |
+        filter meta.signal_type = "trace" and span.kind = "server"
+        | fields time, name, duration_ms, http.response.status_code, trace.trace_id
+        | sort duration_ms desc
+        | limit 20
+
+  # Both signals at once, and in the order they happened: the spans give the shape of the request
+  # and the log records give what it said while serving it.
+  OneTraceQuery:
+    Type: AWS::Logs::QueryDefinition
+    Properties:
+      Name: !Sub "${AWS::StackName}/One trace"
+      LogGroupNames: [!Ref LogGroup]
+      QueryString: |
+        filter trace.trace_id = "paste a trace id here"
+        | fields time, duration_ms, name, span.kind, body, trace.span_id, trace.parent_id
+        | sort time asc
+
+  # A span reports failure as OTLP status 2 and a log record as severity 17 or above, so asking
+  # what went wrong means asking both.
+  ErrorsQuery:
+    Type: AWS::Logs::QueryDefinition
+    Properties:
+      Name: !Sub "${AWS::StackName}/Errors"
+      LogGroupNames: [!Ref LogGroup]
+      QueryString: |
+        filter status_code = 2 or severity_code >= 17
+        | fields time, name, status_message, body, trace.trace_id
+        | sort time desc
+        | limit 50
+
+  # `migrate` runs in the function's init rather than in an invocation, so one of its spans is
+  # one execution environment starting. Counting them counts cold starts, which the application
+  # cannot otherwise see: it is frozen for the whole of the interval that decides them.
+  ColdStartsQuery:
+    Type: AWS::Logs::QueryDefinition
+    Properties:
+      Name: !Sub "${AWS::StackName}/Cold starts"
+      LogGroupNames: [!Ref LogGroup]
+      QueryString: |
+        filter meta.signal_type = "trace" and name = "migrate"
+        | stats count(*) as coldStarts, pct(duration_ms, 99) as p99 by bin(1h)
+
+  # The same loop laid out to be glanced at. The one metric widget is there because it is the
+  # only thing on the page the telemetry cannot supply: an invocation that failed to start, or
+  # was throttled, or timed out, never wrote a span, and is counted by Lambda and nowhere else.
+  TelemetryDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Ref AWS::StackName
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 24, "height": 6,
+              "properties": {
+                "title": "What the platform saw",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${Function}"],
+                  [".", "Errors", ".", "."],
+                  [".", "Throttles", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "log",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Server latency",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "query": "SOURCE '${LogGroup}' | filter meta.signal_type = \"trace\" and span.kind = \"server\" | stats pct(duration_ms, 50) as p50, pct(duration_ms, 99) as p99 by bin(5m)"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "p99 by route",
+                "region": "${AWS::Region}",
+                "view": "bar",
+                "query": "SOURCE '${LogGroup}' | filter meta.signal_type = \"trace\" and span.kind = \"server\" | stats pct(duration_ms, 99) as p99 by http.route | sort p99 desc | limit 10"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "title": "Slowest requests",
+                "region": "${AWS::Region}",
+                "view": "table",
+                "query": "SOURCE '${LogGroup}' | filter meta.signal_type = \"trace\" and span.kind = \"server\" | fields time, name, duration_ms, trace.trace_id | sort duration_ms desc | limit 20"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12, "y": 12, "width": 12, "height": 6,
+              "properties": {
+                "title": "Errors",
+                "region": "${AWS::Region}",
+                "view": "table",
+                "query": "SOURCE '${LogGroup}' | filter status_code = 2 or severity_code >= 17 | fields time, name, status_message, body, trace.trace_id | sort time desc | limit 20"
+              }
+            }
+          ]
+        }
+
 Outputs:
   Endpoint:
     Description: Public URL of the application.
     Value: !GetAtt FunctionUrl.FunctionUrl
+
+  Dashboard:
+    Description: Where the telemetry is read.
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${TelemetryDashboard}"
