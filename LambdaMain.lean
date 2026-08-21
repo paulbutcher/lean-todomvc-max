@@ -71,10 +71,14 @@ deployed rather than here.
 SES needs no secret of its own: the request is signed with the role the function already runs as,
 which is why nothing here reads a provider token. -/
 def authSettings : IO Todo.Auth.Settings := do
-  let some baseUrl ← IO.getEnv "BASE_URL"
+  let some raw ← IO.getEnv "BASE_URL"
     | throw (IO.userError "BASE_URL is not set")
-  if baseUrl.isEmpty then
-    throw (IO.userError "BASE_URL is empty, so a sign-in link would point nowhere")
+  -- `ofString` trims the trailing slash a function URL is published with, so what is checked
+  -- below is what a link will actually be built from: an origin of nothing but slashes is as
+  -- empty as an empty one, and neither can name anywhere a browser could come back to.
+  let baseUrl := Authentication.BaseUrl.ofString raw
+  if baseUrl.origin.isEmpty then
+    throw (IO.userError "BASE_URL names no origin, so a sign-in link would point nowhere")
   let some sender ← IO.getEnv "MAIL_FROM"
     | throw (IO.userError "MAIL_FROM is not set")
   let .ok address := Authentication.EmailAddress.parse sender
@@ -84,7 +88,7 @@ def authSettings : IO Todo.Auth.Settings := do
     | throw (IO.userError "AWS_REGION is not set")
   pure
     { pepper := ← pepper
-      baseUrl := ⟨baseUrl⟩
+      baseUrl
       sender := { address, displayName := "todos" }
       transport := Todo.Auth.refreshing awsCredentials fun credentials =>
         Authentication.Ses.transport { region, credentials } }

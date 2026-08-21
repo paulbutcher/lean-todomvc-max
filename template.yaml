@@ -19,7 +19,8 @@ Parameters:
       read from the function URL resource here: that resource depends on the function, so the
       function's environment depending on it in turn is a cycle CloudFormation refuses. Deploy
       once with this empty, read `Endpoint` from the outputs, and deploy again with it set.
-      Sign-in is refused until it is.
+      Sign-in is refused until it is. A trailing slash, which is how that output is published, is
+      trimmed rather than concatenated into a link that would then 404.
 
   MailFrom:
     Type: String
