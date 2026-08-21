@@ -106,10 +106,37 @@ structure Settings where
   sender : SendingIdentity
   transport : EmailTransport IO
 
+/-- What a refusal is allowed to say.
+
+The library's default says nothing whatever, which is right for the outcomes that identify a
+person. That an address has no account, or was not invited, is precisely what somebody asking
+after other people's addresses wants to learn, and those stay indistinguishable from a link
+being sent.
+
+Throttling is not one of those. The limiter is consulted before anything that depends on the
+address existing, so the identical refusal reaches an address with an account and one without and
+no comparison between them separates the two. What it does disclose is that this address has been
+asked after recently, which is ambiguous with the requester's own budget anyway. Set against
+that: a page that silently does nothing sends whoever hit the limit looking for a broken mail
+server, which is where this one came from.
+
+A malformed address describes what was typed and nobody at all.
+
+`throttled` also carries a failed human check and a failure to draw random bytes, so those read
+as "try again later" too. Neither is reachable here: the check admits everyone and the other is
+the operating system's entropy source failing. -/
+@[expose] def messageFor : SignInOutcome → SignInMessage
+  | .throttled => .tryAgainLater
+  | .malformedAddress => .addressMalformed
+  | _ => .checkYourMail
+
+def responsePolicy : SignInResponsePolicy IO where
+  respond _ outcome := pure { message := messageFor outcome, notice := none }
+
 def ports (pool : _root_.Postgres.Pool) (settings : Settings) : Service.Ports IO where
   store := sqlAuthStore Authentication.Postgres.dialect (connection pool)
   transport := settings.transport
-  responsePolicy := SignInResponsePolicy.silent IO
+  responsePolicy := responsePolicy
   limiter := rateLimiter Authentication.Postgres.dialect (connection pool)
   responseFloor := ResponseFloor.sleeping 400
   humanCheck := HumanCheck.unchecked IO

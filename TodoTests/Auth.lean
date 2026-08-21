@@ -39,6 +39,19 @@ private def testEverySendAsksAgain : IO Unit := do
   discard <| transport.send (message "two")
   checkEq "each send drew a credential of its own" #[0, 1] (← used.get)
 
+/-- The point of a silent sign-in response: the outcomes that identify a person are
+indistinguishable from a link having been sent, so asking after somebody else's address teaches
+nothing about whether they have an account.
+
+Stated over the whole of `SignInOutcome` rather than over a list of the cases that matter today,
+so that a case added to the library has to be answered here rather than defaulting into a leak.
+The two it admits describe the request and not the requester: how often this address has been
+asked after, and whether what was typed parses. -/
+theorem onlySpeaksAboutTheRequest (outcome : Authentication.SignInOutcome) :
+    Todo.Auth.messageFor outcome ≠ .checkYourMail →
+      outcome = .throttled ∨ outcome = .malformedAddress := by
+  cases outcome <;> simp [Todo.Auth.messageFor]
+
 def runAuthTests : IO Unit := runGroup "Todo.Auth" testEverySendAsksAgain
 
 end TodoTests

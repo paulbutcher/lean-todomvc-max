@@ -96,3 +96,10 @@
 .auth .warn {
   color: #b83f45;
 }
+
+/* Said on every "check your mail", whatever happened, so it can carry no information about
+   which outcome this was. */
+.auth .note {
+  font-size: 14px;
+  color: #777;
+}

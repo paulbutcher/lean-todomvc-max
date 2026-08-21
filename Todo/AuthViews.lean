@@ -45,8 +45,9 @@ private def hidden (name : String) (value : Option String) : List (Node .flow) :
   | none => []
   | some value => [input { type := "hidden", name, value }]
 
-/-- Every outcome of asking for a link maps to one of these, and under a silent response policy
-to the same one, which is what stops the page reporting whether an address has an account. -/
+/-- Every outcome of asking for a link maps to one of these. Which outcomes are allowed to reach
+a distinct one is `Todo.Auth.messageFor`'s decision rather than this function's: the wording here
+is faithful to each case, and what keeps a case unreachable is the policy. -/
 private def messageText : SignInMessage → String
   | .checkYourMail => "If that address can sign in, a link is on its way to it."
   | .addressNotRecognised => "That address does not have an account here."
@@ -107,12 +108,30 @@ def pages : Authentication.Http.Pages where
             ++ hidden "returnTo" context.returnTo
             ++ [(button ["Send me a link"] : Node .flow)])
           { method := "post", action := context.action } ]
+  -- Two shapes, chosen by the message rather than by the outcome, which is what keeps this from
+  -- being an oracle of its own: `Todo.Auth.messageFor` has already decided what may be
+  -- distinguished, and everything it holds back arrives here as `checkYourMail` and gets the
+  -- page that says a link is coming.
+  --
+  -- The other shape exists because the first one lies otherwise. Telling somebody who has been
+  -- refused to go and open a link, under a heading saying their mail is on its way, is worse
+  -- than the silence it replaced. There is no code entry on it either: a refusal mints a decoy
+  -- attempt cookie, so whatever code an earlier link produced can no longer be spent.
   sent context message :=
-    shell "Check your mail"
-      ([ h2 ["Check your mail"],
-         p [messageText message],
-         p ["Open the link on this device and you are signed in. There is nothing to type."] ]
-        ++ codeAside context)
+    match message with
+    | .checkYourMail =>
+      shell "Check your mail"
+        ([ h2 ["Check your mail"],
+           p [messageText message],
+           p ["Open the link on this device and you are signed in. There is nothing to type."],
+           p ["Asking again replaces the link, so only the newest one works, and there is a \
+               limit on how often you can ask."] { class_ := "note" } ]
+          ++ codeAside context)
+    | refusal =>
+      shell "No link sent"
+        [ h2 ["No link sent"],
+          p [messageText refusal] { class_ := "warn" },
+          p [a { href := signInPath } ["Try again"]] ]
   confirm context :=
     shell s!"Sign in to {context.tenantName}"
       [ h2 ["One more tap"],
