@@ -74,8 +74,7 @@ def main : IO Unit := Async.block do
     let site := Todo.Auth.site pool
       { pepper := developmentPepper
         baseUrl := ⟨s!"http://localhost:{port}"⟩
-        sender :=
-          { address := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩, displayName := "todos" }
+        senderAddress := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩
         transport := Authentication.EmailTransport.console }
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
     let server ← serve addr

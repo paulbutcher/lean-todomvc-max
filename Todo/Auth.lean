@@ -11,6 +11,7 @@ public import AuthenticationHttp
 public import AuthenticationPostgres
 public import Postgres
 public import Middleware
+public import Todo.AuthMail
 public import Todo.AuthViews
 public import Todo.Tenant
 
@@ -103,7 +104,12 @@ structure Settings where
   /-- Where the magic link points, which is the one thing about this application the mail has to
   know and the application cannot discover for itself. -/
   baseUrl : BaseUrl
-  sender : SendingIdentity
+  /-- Only the address is a deployment's to choose: the name beside it in an inbox is what
+  this application is called, which is settled below and not per deployment. -/
+  senderAddress : EmailAddress
+  /-- Where a reply goes. `none` leaves the sending address to receive them, which for the
+  no-reply address a deployment usually sends from is nowhere anybody reads. -/
+  replyTo : Option EmailAddress := none
   transport : EmailTransport IO
 
 /-- What a refusal is allowed to say.
@@ -142,13 +148,20 @@ def ports (pool : _root_.Postgres.Pool) (settings : Settings) : Service.Ports IO
   humanCheck := HumanCheck.unchecked IO
   peppers := { current := settings.pepper }
 
+/-- What this application is called wherever somebody sees it: the sign-in pages, the subject
+line of the mail, and the name beside the address it arrives from. -/
+def displayName : String := "TodoMVC"
+
 /-- Generic in the tenant so that the lookup below can answer for the one it was asked about
 rather than having to prove it is the one this application has. -/
 def tenantConfig (settings : Settings) (t : TenantId) : TenantConfig t where
-  displayName := "TodoMVC"
+  displayName := Auth.displayName
   baseUrl := settings.baseUrl
-  sendingIdentity := settings.sender
+  sendingIdentity :=
+    { address := settings.senderAddress, displayName := Auth.displayName,
+      replyTo := settings.replyTo }
   signupPolicy := .unrestricted
+  templates := Todo.AuthMail.templates
   -- The application is mounted at the root, so a session cookie confined to the tenant's own
   -- path would never be offered to any route that needs it.
   sessionCookiePath := "/"

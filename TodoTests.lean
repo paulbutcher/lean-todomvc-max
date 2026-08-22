@@ -8,6 +8,7 @@ module
 public import TodoTests.App
 public import TodoTests.Chat
 public import TodoTests.Auth
+public import TodoTests.AuthMail
 public import TodoTests.Db
 public import TodoTests.Logs
 public import TodoTests.Store
@@ -23,6 +24,7 @@ checked by the time this builds, so only the ones that need to execute appear he
 def runAll : IO Unit := do
   runAppTests
   runAuthTests
+  runAuthMailTests
   runChatTests
   runTracingTests
   runLogsTests

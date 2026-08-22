@@ -36,6 +36,14 @@ Parameters:
       The address sign-in mail is sent from. Its domain needs SPF, DKIM, DMARC and an MX record
       (a null MX will do) before mail is delivered rather than filed as spam.
 
+  MailReplyTo:
+    Type: String
+    Default: ""
+    Description: >-
+      Where a reply to sign-in mail goes. Empty leaves it with the sending address, which for a
+      no-reply sender means replies are read by nobody. It needs no SES identity of its own:
+      only the address mail is sent from does.
+
   BedrockModel:
     Type: String
     Default: ""
@@ -298,6 +306,7 @@ Resources:
           AUTH_PEPPER_KEY_ID: !Ref PepperKeyId
           BASE_URL: !Ref BaseUrl
           MAIL_FROM: !Ref MailFrom
+          MAIL_REPLY_TO: !Ref MailReplyTo
           BEDROCK_MODEL: !Ref BedrockModel
           OTEL_SERVICE_NAME: todomvc
           # Telemetry leaves as JSON on stdout, which the runtime forwards to CloudWatch Logs.

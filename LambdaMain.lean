@@ -64,6 +64,15 @@ def awsCredentials : IO Aws.Sigv4.Credentials := do
   let sessionToken ← IO.getEnv "AWS_SESSION_TOKEN"
   pure { accessKeyId, secretAccessKey, sessionToken }
 
+/-- Unset and empty mean the same thing: a stack parameter left at its default gives the
+variable an empty string rather than leaving it out of the environment. -/
+def replyToAddress : IO (Option Authentication.EmailAddress) := do
+  let some raw ← IO.getEnv "MAIL_REPLY_TO" | return none
+  if raw.isEmpty then return none
+  let .ok address := Authentication.EmailAddress.parse raw
+    | throw (IO.userError s!"MAIL_REPLY_TO is {raw}, which is not an email address")
+  return some address
+
 /-- Everything the mail needs that this process cannot discover for itself. The base URL is the
 origin the magic link points back at, which is the function's own and so is settled when it is
 deployed rather than here.
@@ -89,7 +98,8 @@ def authSettings : IO Todo.Auth.Settings := do
   pure
     { pepper := ← pepper
       baseUrl
-      sender := { address, displayName := "todos" }
+      senderAddress := address
+      replyTo := ← replyToAddress
       transport := Todo.Auth.refreshing awsCredentials fun credentials =>
         Authentication.Ses.transport { region, credentials } }
 

@@ -7,6 +7,7 @@ module
 
 public import Todo.Tenant
 public import Todo.Auth
+public import Todo.AuthMail
 public import Todo.AuthViews
 public import Todo.Store
 public import Todo.Chat
