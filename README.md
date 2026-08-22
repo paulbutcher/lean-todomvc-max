@@ -9,6 +9,9 @@ The UI is HTMX plus a very little JavaScript.
 
 ## Why Lean?
 
+Lean is a strongly typed functional language with a built-in theorem prover. This allows us to 
+make some very strong guarantees:
+
 - **Markup is typed and formally verified.** A `<div>` inside a `<p>` is a type error, text
   content is escaped on the way in, and `Node.render_wellFormed` proves that what comes out is
   well-formed HTML.
