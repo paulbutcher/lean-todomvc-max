@@ -1,32 +1,167 @@
 # TodoMVC
 
-See: [Formally verified CRUD](https://paulbutcher.com/lean2.html)
+[TodoMVC](https://todomvc.com) in Lean 4, with what a deployed application needs around it:
+passwordless sign-in, per-account lists, SQL migrations, OpenTelemetry spans and logs, and an
+assistant panel that reads and changes the list through tool calls to a model on Bedrock. The same
+code runs as an ordinary server on a laptop and as a Lambda function URL over RDS Postgres.
 
-A Lean implementation of [TodoMVC](https://todomvc.com).
+The UI is HTMX: every interaction is a request that returns the fragment it replaces.
 
-## The assistant panel
+Background: [Formally verified CRUD](https://paulbutcher.com/lean2.html).
 
-The panel beside the list talks to a model on Amazon Bedrock, which is given tools to read and
-change the todos of whoever is signed in. It reads the usual `AWS_*` variables, so during
-development anything that puts credentials in the environment will do:
+## Why Lean?
+
+- **Markup is a typed value.** A `<div>` inside a `<p>` is a type error, text content is escaped on
+  the way in, and `Node.render_wellFormed` proves that what comes out is well-formed HTML.
+- **A route pattern determines its handler.** One `route_table` ([Todo/Links.lean](Todo/Links.lean))
+  yields `patterns.toggle` for the router and `links.toggle` for the markup, and
+  `"/todos/:id:Nat/toggle"` forces both to take a `Nat`. A handler of the wrong arity or the wrong
+  type does not compile, and a link cannot drift from the route that serves it. The same match
+  supplies `http.route` on the request's span, so the dashboard groups by a route the router agreed
+  to rather than by a path scraped out of a URL.
+- **`hx-*` attributes are record fields**, not strings in an attribute bag: a misspelt one does not
+  compile, and `hx-swap` is a closed enum, so neither does an invalid swap.
+- **What the model writes is untrusted input.** A reply is Markdown that reaches the page as HTML.
+  lean-markdown is total, never panicking or looping on any input including adversarial input; it
+  passes every example in the CommonMark and cmark-gfm suites; and `renderHtmlSafe` is proved to
+  emit well-formed HTML in which no string from the document can produce markup or break out of an
+  attribute.
+- **The account is in the type.** Every operation on `Store` takes an `Account`, mutations included
+  ([Todo/Store.lean](Todo/Store.lean)), and an `Account` is indexed by the tenant it belongs to.
+  Reaching another person's row is not a check that can be forgotten, because omitting it is a type
+  error.
+- **Encodings are proved to round-trip, not sampled.** What is written to a chat row is what is read
+  back from it (`toMsg_ofMsg`), which matters because the conversation is replayed to the model in
+  full on every turn. Underneath, leancrypto proves `decode (encode bytes) = some bytes` for hex,
+  base64, base64url and Crockford base32, that its modular exponentiation agrees with
+  `base ^ exponent % modulus`, and that its early-exit-free comparison is equality.
+- **Security properties are theorems.** A page carries its anti-forgery attribute exactly when it
+  has a token to put in it (`csrfAttrs_nonempty_iff`): never announcing one it lacks, never dropping
+  one it has. A sign-in refusal is proved to speak only about the request and never about who owns
+  the address (`onlySpeaksAboutTheRequest`), stated over the whole outcome type, so a case added
+  upstream has to be answered here rather than defaulting into a leak.
+- **Totality is the default.** Nothing in this application is `partial` and nothing in it can panic,
+  and the same holds of every library in the table above: a loop that reads until its input runs out
+  carries a bound and a proof that it decreases, rather than an exemption from the termination
+  checker. `warningAsError` is on, so an unfinished proof cannot be left behind either, which is
+  what makes the theorems above load-bearing rather than decorative.
+
+## The stack
+
+Lean 4.33, `Std.Http.Server`, and:
+
+| | |
+|---|---|
+| [lean-html](https://github.com/paulbutcher/lean-html) · [lean-htmx](https://github.com/paulbutcher/lean-htmx) | typed markup and typed `hx-*` attributes |
+| [lean-routing](https://github.com/paulbutcher/lean-routing) | typed router and route table |
+| [lean-middleware](https://github.com/paulbutcher/lean-middleware) | sessions, sealed cookie store, anti-forgery, static files, request tracing |
+| [lean-authentication](https://github.com/paulbutcher/lean-authentication) | magic links, sessions, rate limiting, bounce handling, consent |
+| [leanpostgres](https://github.com/paulbutcher/leanpostgres) · [leanmigrate](https://github.com/paulbutcher/leanmigrate) | `libpq` bindings with a connection pool; migrations as plain SQL files |
+| [lean-telemetry](https://github.com/paulbutcher/lean-telemetry) | OpenTelemetry traces and logs |
+| [lean-llmclient](https://github.com/paulbutcher/lean-llmclient) · [lean-markdown](https://github.com/paulbutcher/lean-markdown) | provider-agnostic chat with tool calling; GFM for rendering replies |
+| [lean-aws](https://github.com/paulbutcher/lean-aws) · [lean-aws-lambda](https://github.com/paulbutcher/lean-aws-lambda) | SigV4 signing; the Lambda runtime interface |
+| [lean-json](https://github.com/paulbutcher/lean-json) | JSON, below |
+
+## Why lean-json
+
+Everything here reads and writes JSON with `lean-json` rather than with `Lean.Data.Json`, which is
+worth saying because the latter is what a Lean programmer would reach for first.
+
+`Lean.Data.Json` is part of the compiler frontend. A single runtime `import Lean` anywhere in the
+dependency graph links that frontend into the binary. The deployed binary here is 12 MB; the last
+time such an import reached it through a dependency it became 138 MB, and cold start moved in step.
+`lean-json` depends on `Init` and `Std` and on nothing in the `Lean` namespace.
+
+It is also stricter than a replacement had to be: nothing in it is `partial`, nothing can panic, it
+is proved correct against the grammar of RFC 8259, and no operation walks a value on the C stack, so
+a deeply nested document is a bounded error rather than a crash. Codecs, paths, `deriving ToJson,
+FromJson` and `json%` literals are all there; see its
+[README](https://github.com/paulbutcher/lean-json#readme).
+
+## Running it
+
+Needs a Postgres, `libpq` and `libcurl` development packages, and the toolchain in
+[lean-toolchain](lean-toolchain). [.devcontainer](.devcontainer/) has all of it.
+
+```
+lake build
+lake exe TodoMVC        # http://localhost:8080
+lake test               # uses the same database
+```
+
+`libpq` reads the connection from the usual `PG*` variables. Migrations run at startup, so a fresh
+database needs nothing first; `lake exe migrate` applies and rolls them back by hand. Sign-in mail is
+printed to the terminal rather than sent, so following a magic link needs no mail server, and spans
+are printed there too in a readable form.
+
+For the assistant panel, anything that puts credentials in the environment will do:
 
 ```
 eval "$(aws configure export-credentials --profile <profile> --format env)"
 export AWS_REGION=<region>
+export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
-`BEDROCK_MODEL` picks the model, and without it the client's own default applies. The model has to
-be enabled in that region first, and the id may be a cross-region inference profile rather than a
-foundation model, which is why it is configuration rather than a constant.
+## Deploying to your own account
 
-Nothing needs any of this to be set to run the server: a turn that cannot be signed reports that
-in the panel, and the list itself works either way.
+[template.yaml](template.yaml) is the whole deployment: a VPC with no egress, an RDS Postgres, the
+function behind a public function URL, interface endpoints for SES and Bedrock, secrets, a log group,
+a dashboard and its saved queries.
 
-## Reading a deployed function's telemetry
+You need AWS credentials, a Docker that can build `linux/arm64`, and an SES identity for the address
+you will send from. Give its domain SPF, DKIM, DMARC and an MX record, and while the account is in
+the SES sandbox, verify the recipients too.
 
-Spans and log records leave as one JSON object per line, so that the CloudWatch log group can be
-queried rather than only read. `lake exe logs` renders them back into the form a terminal wants:
+```
+sam build
+sam deploy --guided --stack-name todomvc
+```
+
+Answer yes to creating a managed ECR repository. `MailFrom` is the only parameter without a default.
+
+A sign-in link has to name an origin, and the function URL is not knowable until the function exists,
+so deploy a second time with `BaseUrl` set to what the first deploy printed:
+
+```
+aws cloudformation describe-stacks --stack-name todomvc \
+  --query 'Stacks[0].Outputs' --output table
+
+sam deploy --stack-name todomvc --parameter-overrides \
+  "MailFrom=no-reply@example.com BaseUrl=https://<id>.lambda-url.<region>.on.aws"
+```
+
+`--parameter-overrides` resets every parameter it does not name back to the template's default, so
+pass the full set each time.
+
+For the assistant, set `BedrockModel` to an id enabled in that region. Most current models are
+reachable only through a cross-region inference profile, which `aws bedrock list-inference-profiles`
+lists. A Marketplace-served model enables itself on first invocation, and that invocation must come
+from a principal holding `aws-marketplace:Subscribe`, so prime it once from an administrative
+identity rather than widening the function's role:
+
+```
+aws bedrock-runtime converse --region <region> --model-id "<id>" \
+  --messages '[{"role":"user","content":[{"text":"hello"}]}]'
+```
+
+## Telemetry
+
+The function has no egress, so spans and log records leave as one flat JSON object per line on
+stdout, which the runtime forwards to CloudWatch Logs. Flat rather than OTLP so that any field on any
+row can be grouped by at query time, at any cardinality: the log group is queried like a trace store
+rather than read like a transcript.
+
+`lake exe logs` renders those rows back into the form the local server prints directly:
 
 ```
 sam logs --stack-name todomvc --tail | lake exe logs
 ```
+
+The `Dashboard` stack output is a console URL for the dashboard the template creates: platform
+metrics, server latency, p99 by route, slowest requests, and errors. Beside it, under Logs Insights,
+the template saves the steps of an analysis loop as query definitions, from slowest routes down to a
+single trace read end to end.
+
+## License
+
+Copyright (c) 2026 Paul Butcher. Apache 2.0; see [LICENSE](LICENSE).
