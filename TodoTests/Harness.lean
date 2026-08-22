@@ -126,6 +126,15 @@ def scriptedAssistant (replies : Array LLMClient.Reply)
       chat := ← memoryChatStore
       turns := ← Turns.new }
 
+/-- Runs `act` with the gate still closed, and opens it however `act` ends.
+
+Opening it afterwards in sequence is not enough: a failing assertion throws straight past that,
+the provider's thread stays parked on the promise for good, and the process cannot exit. The
+suite then hangs instead of reporting the failure it had just found, which in a CI run surfaces
+as a timeout carrying no message at all. -/
+def whileHeld {α : Type} (gate : IO.Promise Unit) (act : IO α) : IO α :=
+  try act finally gate.resolve ()
+
 /-- Waits for whatever turn is in flight to stop being in flight, or gives up.
 
 Turns run on a thread of their own, so a test that looked once would be reading a race. The bound

@@ -83,16 +83,20 @@ def itemEditView (item : Item) : Node .listItem :=
         [("autofocus", "autofocus")] ]
     { id := itemId, class_ := "editing" }
 
-def listSection (items : Array Item) : Node .flow :=
+/-- `oob` marks this as an out-of-band swap, for a response the browser is not aiming at the list:
+the assistant's poll answers into the chat panel, and grafts the list on beside it. Every other
+caller is answering a request that targeted the list, where saying so again would be redundant. -/
+def listSection (items : Array Item) (oob : Bool := false) : Node .flow :=
   let allCompleted := items.size > 0 && items.all (·.completed)
-  section_
+  Htmx.section_
     [ Htmx.input
         { type := "checkbox", checked := allCompleted, id := "toggle-all",
           class_ := "toggle-all", hxPost := links.toggleAll,
           hxTarget := "#todo-list-section", hxSwap := some .outerHTML },
       label [] { for_ := "toggle-all" },
       ul (items.toList.map itemView) { class_ := "todo-list" } ]
-    { id := "todo-list-section", class_ := "main" }
+    { id := "todo-list-section", class_ := "main",
+      hxSwapOob := if oob then some "true" else none }
 
 def filterLink (current target : Filter) (label : String) : Node .listItem :=
   li [ a { href := target.path,
@@ -118,6 +122,11 @@ def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
 
 def mutationFragment (items allItems : Array Item) (filter : Filter) : String :=
   Node.render (listSection items) ++ Node.render (footerFragment allItems filter)
+
+/-- The same two fragments, for a response aimed somewhere else entirely. The footer already
+swaps out of band wherever it appears, since it is never what a request targets. -/
+def listRefreshFragment (items allItems : Array Item) (filter : Filter) : String :=
+  Node.render (listSection items (oob := true)) ++ Node.render (footerFragment allItems filter)
 
 /-- The address is what makes the session visible; the account id it hangs off says nothing to
 the person holding it. `none` only where the account has gone between being identified and being

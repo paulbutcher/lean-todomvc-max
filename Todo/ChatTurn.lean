@@ -109,8 +109,16 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
         | .runningTool name =>
           assistant.turns.advance account fun state =>
             { state with phase := .callingTool name, tools := state.tools.push name }
-      let result ← LLMClient.converseLoop provider ChatTools.all
-        (ChatTools.run store account parent) history
+      -- Counted after the call rather than in `onProgress`, which fires before one runs: a poll
+      -- that refreshed on the announcement would read the list back as it was a moment earlier
+      -- and show the change as not having happened.
+      let runTool (name : String) (input : Json) : IO String := do
+        let output ← ChatTools.run store account parent name input
+        if ChatTools.mutates name then
+          assistant.turns.advance account fun state =>
+            { state with mutations := state.mutations + 1 }
+        pure output
+      let result ← LLMClient.converseLoop provider ChatTools.all runTool history
         { maxIterations, onProgress }
       match result with
       | .error failure =>

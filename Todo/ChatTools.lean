@@ -82,6 +82,15 @@ def setDone : Tool :=
 
 def all : Array Tool := #[listTodos, addTodo, editTodo, deleteTodo, setDone]
 
+/-- Whether a call by this name can leave the list different from how it found it, which is what
+decides whether the page showing that list has gone stale.
+
+Stated as what does not mutate rather than what does: a tool added later mutates until someone
+says otherwise, so forgetting to update this leaves a redundant refresh rather than a list on
+screen that disagrees with the store. A name that is not a tool at all never runs, and counting
+it costs one refresh. -/
+def mutates (name : String) : Bool := name != listTodos.name
+
 /-! ## Running one -/
 
 private def itemJson (item : Item) : Json :=

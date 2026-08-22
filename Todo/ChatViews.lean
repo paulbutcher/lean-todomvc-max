@@ -65,14 +65,14 @@ def messageView : Msg → List (Node .flow)
 been said yet. Absent once the turn is over, and that absence is also what stops the polling:
 the fragment this sits in carries the trigger for the next poll only while there is one. -/
 def turnView : TurnState → Node .flow
-  | { phase := .failed message, tools } =>
+  | { phase := .failed message, tools, .. } =>
     div (toolList tools (runningLast := false) ++
         [(div [s!"That went wrong: {message}"] { class_ := "chat-bubble chat-error" } :
             Node .flow)])
       { class_ := "chat-message from-assistant" }
-  | { phase := .callingTool _, tools } =>
+  | { phase := .callingTool _, tools, .. } =>
     div (toolList tools (runningLast := true)) { class_ := "chat-message from-assistant" }
-  | { phase := .thinking, tools } =>
+  | { phase := .thinking, tools, .. } =>
     div (toolList tools (runningLast := false) ++
         [(div [span ["Thinking"] {}] { class_ := "chat-bubble chat-thinking" } : Node .flow)])
       { class_ := "chat-message from-assistant" }
@@ -91,9 +91,13 @@ def conversationView (messages : Array Msg) (turn : Option TurnState) : Node .fl
     if messages.isEmpty && turn.isNone then [emptyTranscript]
     else (messages.toList.flatMap messageView) ++ (turn.map turnView).toList
   let polling := turn.any (·.phase.isRunning)
+  -- The next poll carries how many mutations this fragment was rendered against, which is what
+  -- lets the handler answer "has the list changed since you last saw it" without keeping any
+  -- per-browser state of its own.
+  let seen := (turn.map (·.mutations)).getD 0
   Htmx.div body
     { id := "chat-conversation", class_ := "chat-conversation"
-      hxGet := if polling then some links.chatStatus else none
+      hxGet := if polling then some s!"{links.chatStatus}?seen={seen}" else none
       hxTrigger := if polling then some "load delay:200ms" else none
       hxTarget := if polling then some "this" else none
       hxSwap := if polling then some .outerHTML else none }

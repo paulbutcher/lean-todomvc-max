@@ -166,17 +166,18 @@ private def sendPrompt (body : String) : String :=
 stores it and answers with the transcript it is now in, rather than waiting out the turn. The gate
 is what makes "before" a place a test can stand, since it holds the turn open until it is let go.
 
-The turn is then let go and awaited, which is also what keeps the scripted provider's thread from
-outliving the test. -/
+`whileHeld` then lets it go however the block ends, which is what keeps the scripted provider's
+thread from outliving the test even when an assertion inside fails. -/
 private def testAPromptIsShownBeforeTheModelReplies : IO Unit := do
   let gate ← IO.Promise.new
   let assistant ← scriptedAssistant #[{ text := "Two todos are left." }] (gate := some gate)
   let store ← memoryStore alice #[alpha]
-  check "POST /chat" (sendPrompt "prompt=what+is+left") (← panelOf assistant store)
-    fun response => do
-      assertContains response "what is left"
-      assertAbsent response "Two todos are left."
-  gate.resolve ()
+  let handler ← panelOf assistant store
+  whileHeld gate do
+    check "POST /chat" (sendPrompt "prompt=what+is+left") handler
+      fun response => do
+        assertContains response "what is left"
+        assertAbsent response "Two todos are left."
   awaitTurn assistant.turns alice "the scripted turn"
   checkEq "the prompt and the reply, in that order"
     #[("user", "what is left"), ("assistant", "Two todos are left.")] (← transcriptOf assistant)
@@ -189,10 +190,10 @@ private def testASecondPromptDuringATurnIsDropped : IO Unit := do
     (gate := some gate)
   let store ← memoryStore alice #[]
   let handler ← panelOf assistant store
-  check "the first prompt" (sendPrompt "prompt=one") handler fun _ => pure ()
-  check "the second, mid-turn" (sendPrompt "prompt=two") handler fun response =>
-    assertAbsent response "two"
-  gate.resolve ()
+  whileHeld gate do
+    check "the first prompt" (sendPrompt "prompt=one") handler fun _ => pure ()
+    check "the second, mid-turn" (sendPrompt "prompt=two") handler fun response =>
+      assertAbsent response "two"
   awaitTurn assistant.turns alice "the first turn"
   checkEq "only the first was ever stored" #[("user", "one"), ("assistant", "first")]
     (← transcriptOf assistant)
@@ -227,9 +228,9 @@ private def testAFinishedTurnStopsThePolling : IO Unit := do
   let assistant ← scriptedAssistant #[{ text := "All done." }] (gate := some gate)
   let store ← memoryStore alice #[]
   let handler ← panelOf assistant store
-  check "a prompt" (sendPrompt "prompt=anything") handler fun response =>
-    assertContains response "hx-trigger"
-  gate.resolve ()
+  whileHeld gate do
+    check "a prompt" (sendPrompt "prompt=anything") handler fun response =>
+      assertContains response "hx-trigger"
   check "GET /chat/status" (mkGetClose "/chat/status") handler fun response => do
     assertContains response "All done."
     assertAbsent response "hx-trigger"
@@ -279,6 +280,45 @@ private def testAFailureBeforeAnyToolRecordsNothing : IO Unit := do
   awaitTurn assistant.turns alice "the turn that fails outright"
   checkEq "the prompt stands alone" #[("user", "anything")] (← transcriptOf assistant)
 
+/-- A tool that changes the list has to reach the list on the page. The poll answers into the chat
+panel, so the list rides along as an out-of-band swap; without one the assistant would report an
+addition the person cannot see until they reload.
+
+"gamma" is the load-bearing word here: the transcript shows the tool's *name* and the model's
+reply, never its argument or its result, so the only way that title can appear in this response is
+in a freshly rendered list. -/
+private def testAToolChangeReachesTheTodoList : IO Unit := do
+  let assistant ← scriptedAssistant
+    #[{ text := "", toolCalls := #[{ id := "call_1", name := "add_todo",
+                                     input := Json.mkObj [("title", "gamma")] }] },
+      { text := "Added it." }]
+  let store ← memoryStore alice #[]
+  let handler ← panelOf assistant store
+  check "a prompt" (sendPrompt "prompt=add+gamma") handler fun _ => pure ()
+  awaitTurn assistant.turns alice "the turn that adds"
+  check "the poll carrying the reply" (mkGetClose "/chat/status?seen=0") handler
+    fun response => do
+      assertContains response "Added it."
+      assertContains response "gamma"
+      assertContains response "hx-swap-oob"
+
+/-- The other half: a poll that has nothing new to report leaves the list alone. Re-swapping it on
+every poll would work, and would also throw away a todo the person was part-way through editing,
+so a poll says which count it was drawn against and gets a list back only past that.
+
+The gate holds the turn before its first reply, so nothing has run and the count is still nought.
+This one costs the poll's full wait, since there is deliberately no movement to cut it short. -/
+private def testAPollWithNothingNewLeavesTheListAlone : IO Unit := do
+  let gate ← IO.Promise.new
+  let assistant ← scriptedAssistant #[{ text := "hello" }] (gate := some gate)
+  let store ← memoryStore alice #[alpha]
+  let handler ← panelOf assistant store
+  whileHeld gate do
+    check "a prompt" (sendPrompt "prompt=anything") handler fun _ => pure ()
+    check "a poll drawn against the same count" (mkGetClose "/chat/status?seen=0") handler
+      fun response => assertAbsent response "hx-swap-oob"
+  awaitTurn assistant.turns alice "the gated turn"
+
 def runChatTests : IO Unit := do
   testEachToolChangesTheStore
   testSetDoneIsIdempotent
@@ -294,6 +334,8 @@ def runChatTests : IO Unit := do
   testAFailedTurnIsReportedOnce
   testAFailedTurnStillRecordsWhatItsToolsDid
   testAFailureBeforeAnyToolRecordsNothing
+  testAToolChangeReachesTheTodoList
+  testAPollWithNothingNewLeavesTheListAlone
   testResetForgetsTheConversation
 
 end TodoTests

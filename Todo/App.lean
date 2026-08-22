@@ -64,14 +64,27 @@ def render (store : Store) (account : Account) (parent : Option SpanContext) (fi
   let allItems ← (store.list account .all).run parent
   renderHtml items allItems filter |> Response.ok.html
 
-/-- Renders the fragment for whichever filter the client is currently viewing, per the
-`HX-Current-URL` header HTMX sends with every request. -/
-def renderMutation (store : Store) (account : Account) (req : Request Body.Stream) :
-    ContextAsync (Response Body.Any) :=
-  let currentFilter := match req.line.headers.get? (.ofString! "hx-current-url") with
+/-- Which filter the client is currently viewing, per the `HX-Current-URL` header HTMX sends with
+every request. A fragment has to be rendered for the list the person is actually looking at, not
+for the one the route it came from would imply. -/
+def currentFilter (req : Request Body.Stream) : Filter :=
+  match req.line.headers.get? (.ofString! "hx-current-url") with
   | some v => filterFromPath v.value
   | none => .all
-  render store account (parentSpan req) currentFilter mutationFragment
+
+def renderMutation (store : Store) (account : Account) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) :=
+  render store account (parentSpan req) (currentFilter req) mutationFragment
+
+/-- The list as it now stands, for grafting onto a response aimed somewhere else. Returned as a
+string rather than a response because the caller has its own body to put this after. -/
+def listRefresh (store : Store) (account : Account) (req : Request Body.Stream) :
+    ContextAsync String := do
+  let parent := parentSpan req
+  let filter := currentFilter req
+  let items ← (store.list account filter).run parent
+  let allItems ← (store.list account .all).run parent
+  pure (listRefreshFragment items allItems filter)
 
 /-! ## Handlers -/
 
@@ -98,6 +111,11 @@ def editHandler (store : Store) (account : Account) (id : Nat) (req : Request Bo
 
 def title? (req : Request Body.Stream) : Option String :=
   (req.extensions.get Params).bind (·.get "title")
+
+/-- How many of the turn's mutations the fragment that sent this poll was drawn against. Missing
+or unreadable reads as none, which costs a redundant refresh rather than a missed one. -/
+def seen? (req : Request Body.Stream) : Nat :=
+  (((req.extensions.get Params).bind (·.get "seen")).bind (·.toNat?)).getD 0
 
 def addHandler (store : Store) (account : Account) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
@@ -204,16 +222,25 @@ has already stopped asking; leaving it would report the same failure against eve
 
 `Async.sleep` rather than blocking: this is a fiber sharing its thread with every other request in
 flight, and holding the thread for the wait would stall all of them. -/
-def chatStatusHandler (assistant : Assistant) (account : Account) (req : Request Body.Stream) :
-    ContextAsync (Response Body.Any) := do
+def chatStatusHandler (store : Store) (assistant : Assistant) (account : Account)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let mut turn ← (assistant.turns.get account : IO _)
   for _ in [0:pollWait] do
     if !turn.any (·.phase.isRunning) then break
     liftM (Async.sleep pollInterval)
     turn ← (assistant.turns.get account : IO _)
   let messages ← (assistant.chat.history account).run (parentSpan req)
+  -- The list is grafted on when a tool has changed it since the fragment that asked was drawn,
+  -- and again when the turn ends. The second is what covers a change made between the last poll
+  -- and the reply, and the turn's own entry is gone by then to have been compared against.
+  -- Refreshing once more than strictly needed costs a swap; refreshing once too few leaves the
+  -- person looking at a list that disagrees with what the assistant says it did.
+  let ended := !turn.any (·.phase.isRunning)
+  let moved := turn.any (·.mutations > seen? req)
   if turn.any (!·.phase.isRunning) then (assistant.turns.finish account : IO Unit)
-  Node.render (conversationView messages turn) |> Response.ok.html
+  let conversation := Node.render (conversationView messages turn)
+  let refresh ← if ended || moved then listRefresh store account req else pure ""
+  conversation ++ refresh |> Response.ok.html
 
 /-- Forgets the conversation, so that the next prompt is answered without what came before it
 being replayed to the model.
@@ -258,7 +285,7 @@ def app (identity : Identity) (store : Store) (assistant : Assistant) : Stateles
     .delete patterns.clearCompleted (guarded identity (clearCompletedHandler store)),
     .post patterns.signOut (guarded identity (signOutHandler identity)),
     .post patterns.chat (guarded identity (chatHandler store assistant)),
-    .get patterns.chatStatus (guarded identity (chatStatusHandler assistant)),
+    .get patterns.chatStatus (guarded identity (chatStatusHandler store assistant)),
     .delete patterns.chat (guarded identity (chatResetHandler assistant))
   ]
 

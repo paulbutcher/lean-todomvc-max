@@ -90,10 +90,17 @@ inductive TurnPhase where
 deriving Inhabited, BEq, Repr
 
 /-- `tools` accumulates every tool the turn has called so far, in order, so the panel can show
-the whole sequence rather than only whichever call is in flight. -/
+the whole sequence rather than only whichever call is in flight.
+
+`mutations` counts the calls among them that changed the list, so that a poll can tell whether
+the list on the page is still what the store holds. A count rather than a flag because a poll
+reports which value it last saw: it is how the refresh happens once per change instead of once
+per poll, and re-swapping a list unprompted would discard a todo the person was part-way through
+editing. -/
 structure TurnState where
   phase : TurnPhase
   tools : Array String := #[]
+  mutations : Nat := 0
 deriving Inhabited
 
 /-- The turns running right now, keyed by the account that asked for one. Absent means no turn is
@@ -127,8 +134,11 @@ transcript for a reply that was never written. Whoever reads the failure erases 
 def Turns.fail (turns : Turns) (account : Account) (message : String) : IO Unit :=
   turns.state.atomically do
     modify fun states =>
-      let tools := (states.get? account.value).map (·.tools) |>.getD #[]
-      states.insert account.value { phase := .failed message, tools }
+      let previous := states.get? account.value
+      states.insert account.value
+        { phase := .failed message,
+          tools := (previous.map (·.tools)).getD #[],
+          mutations := (previous.map (·.mutations)).getD 0 }
 
 /-- Moves a running turn on. Absent means the turn is over, and a progress report that arrives
 after that is dropped rather than resurrecting the entry. -/
