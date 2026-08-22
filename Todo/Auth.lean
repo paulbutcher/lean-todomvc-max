@@ -24,74 +24,6 @@ open Std.Http.Server
 
 namespace Todo.Auth
 
-/-! ## The pool as a SQL driver -/
-
-/-- `none` is a statement that has not been given a connection and draws its own; `some` is one
-running inside a transaction, which has to reach the connection the `BEGIN` ran on. -/
-private def borrowed {α : Type} (pool : _root_.Postgres.Pool)
-    (handle : Option _root_.Postgres.Conn) (act : _root_.Postgres.Conn → IO α) : IO α :=
-  match handle with
-  | some conn => act conn
-  | none => pool.withConn act
-
-/-- Integers travel as text because Postgres infers a parameter's type from what it is compared
-against, and nothing here compares one against anything ambiguous. -/
-private def bind (stmt : _root_.Postgres.Stmt) (params : Array SqlValue) : IO Unit := do
-  let mut position : Int32 := 1
-  for value in params do
-    match value with
-    | .null => stmt.bindNull position
-    | .text text => stmt.bindText position text
-    | .int number => stmt.bindText position (toString number)
-    position := position + 1
-
-private def readRow (stmt : _root_.Postgres.Stmt) (columns : Nat) : IO SqlRow := do
-  let mut row : SqlRow := #[]
-  for index in [0 : columns] do
-    let position := Int32.ofNat index
-    row := row.push <| ←
-      if ← stmt.columnIsNull position then pure .null
-      else do pure (.text (← stmt.columnText position))
-  pure row
-
-private def prepared (conn : _root_.Postgres.Conn) (text : String) (params : Array SqlValue) :
-    IO _root_.Postgres.Stmt := do
-  let stmt ← _root_.Postgres.prepare conn text
-  bind stmt params
-  pure stmt
-
-/-- The library's driver seam over the pool the application already has, so authentication does
-not open a connection of its own and its share of the database is bounded by the same pool as
-everything else.
-
-A statement outside a transaction is self-contained, so it borrows for its own duration and
-gives the connection straight back. A transaction borrows once and hands the block what it
-borrowed, which is what keeps its `BEGIN`, its statements and its `COMMIT` on one connection.
-
-The borrow blocks the fiber's thread rather than suspending it, unlike `Todo.Db`. The library's
-ports are `IO`, so there is nowhere for an `Async` to go. -/
-def connection (pool : _root_.Postgres.Pool) : SqlConnection IO where
-  handle := (none : Option _root_.Postgres.Conn)
-  query handle text params := borrowed pool handle fun conn => do
-    let stmt ← prepared conn text params
-    let mut rows : Array SqlRow := #[]
-    let mut columns := 0
-    while ← stmt.step do
-      if rows.isEmpty then
-        columns ← stmt.columnCount
-      rows := rows.push (← readRow stmt columns)
-    pure rows
-  exec handle text params := borrowed pool handle fun conn => do
-    let stmt ← prepared conn text params
-    discard stmt.step
-    pure ((← stmt.commandTuples).getD 0).toNatClampNeg
-  -- A block reached from inside a transaction joins the one already open, which is what both
-  -- backends the library ships do.
-  runTransaction handle action :=
-    match handle with
-    | some conn => action (some conn)
-    | none => pool.withConn fun conn => _root_.Postgres.transaction conn (action (some conn))
-
 /-! ## Configuration -/
 
 /-- What the deployment decides. Everything else about the tenant is settled below, because
@@ -124,7 +56,7 @@ address existing, so the identical refusal reaches an address with an account an
 no comparison between them separates the two. What it does disclose is that this address has been
 asked after recently, which is ambiguous with the requester's own budget anyway. Set against
 that: a page that silently does nothing sends whoever hit the limit looking for a broken mail
-server, which is where this one came from.
+server.
 
 A malformed address describes what was typed and nobody at all.
 
@@ -139,14 +71,17 @@ the operating system's entropy source failing. -/
 def responsePolicy : SignInResponsePolicy IO where
   respond _ outcome := pure { message := messageFor outcome, notice := none }
 
-def ports (pool : _root_.Postgres.Pool) (settings : Settings) : Service.Ports IO where
-  store := sqlAuthStore Authentication.Postgres.dialect (connection pool)
-  transport := settings.transport
-  responsePolicy := responsePolicy
-  limiter := rateLimiter Authentication.Postgres.dialect (connection pool)
-  responseFloor := ResponseFloor.sleeping 400
-  humanCheck := HumanCheck.unchecked IO
-  peppers := { current := settings.pepper }
+/-- The store and the limiter draw from the pool the application already has, rather than
+authentication holding a connection of its own on top of it. -/
+def ports (pool : _root_.Postgres.Pool) (settings : Settings) : Service.Ports IO :=
+  let conn := Authentication.Postgres.poolConnection pool
+  { store := sqlAuthStore Authentication.Postgres.dialect conn
+    transport := settings.transport
+    responsePolicy := responsePolicy
+    limiter := rateLimiter Authentication.Postgres.dialect conn
+    responseFloor := ResponseFloor.sleeping 400
+    humanCheck := HumanCheck.unchecked IO
+    peppers := { current := settings.pepper } }
 
 /-- What this application is called wherever somebody sees it: the sign-in pages, the subject
 line of the mail, and the name beside the address it arrives from. -/

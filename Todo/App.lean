@@ -68,7 +68,7 @@ def render (store : Store) (account : Account) (parent : Option SpanContext) (fi
 every request. A fragment has to be rendered for the list the person is actually looking at, not
 for the one the route it came from would imply. -/
 def currentFilter (req : Request Body.Stream) : Filter :=
-  match req.line.headers.get? (.ofString! "hx-current-url") with
+  match req.line.headers.get? (Header.Name.mk "hx-current-url") with
   | some v => filterFromPath v.value
   | none => .all
 

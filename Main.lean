@@ -27,8 +27,8 @@ deployment where something between the two can drop a flow silently has to say s
 `LambdaMain.conninfo`. -/
 private def poolSize : Nat := 8
 
-/-- Fixed, unlike the port this used to bind, because a magic link has to name an origin a
-browser can come back to and the mail is written before the listener exists. -/
+/-- Named rather than left to the operating system to pick, because a magic link has to name an
+origin a browser can come back to and the mail is written before the listener exists. -/
 def port : IO UInt16 := do
   match ← IO.getEnv "PORT" with
   | none => pure 8080
@@ -79,7 +79,7 @@ def main : IO Unit := Async.block do
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
     let server ← serve addr
       (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions)
-    IO.println s!"Listening on http://{server.localAddr.get!}"
+    IO.println s!"Listening on http://localhost:{port}"
     server.waitShutdown
   finally
     Sdk.shutdown

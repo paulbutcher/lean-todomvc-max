@@ -109,8 +109,6 @@ def scriptedProvider (replies : Array LLMClient.Reply) (gate : Option (IO.Promis
   pure {
     name := "scripted"
     sendRequest := fun _ _ => do
-      -- Branching on the result is what forces it: binding it and discarding it would leave the
-      -- task unevaluated and the gate would hold nothing up.
       if let some gate := gate then
         if gate.result?.get |>.isNone then
           return .error "the gate was dropped before it opened"

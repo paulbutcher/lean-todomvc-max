@@ -75,11 +75,11 @@ private def codeField (context : PageContext) (action label id : String) : Node 
 
 /-- Folded away, and written for somebody who has not opened the link yet.
 
-The wording it replaces asked for "the code it showed you", in the past tense and in an open
-field on the page that answers the very first step. Somebody who has only looked in their mail
-reads that as a code that should already exist, goes looking for one that was never sent, and
-concludes the mail is broken. What is true is that opening the link somewhere else is what
-produces a code, and that this is a way out of a situation rather than a step on the way. -/
+Asking for "the code it showed you" would read, to somebody who has only looked in their mail, as
+a code that should already exist: they go looking for one that was never sent and conclude the
+mail is broken. What is true is that opening the link somewhere else is what produces a code, so
+this is a way out of a situation rather than a step on the way, and the fold says as much before
+the wording does. -/
 private def codeAside (context : PageContext) (expanded : Bool := false) : List (Node .flow) :=
   [ details
       ([ summary ["I opened the link on another device"],
@@ -113,9 +113,9 @@ def pages : Authentication.Http.Pages where
   -- distinguished, and everything it holds back arrives here as `checkYourMail` and gets the
   -- page that says a link is coming.
   --
-  -- The other shape exists because the first one lies otherwise. Telling somebody who has been
-  -- refused to go and open a link, under a heading saying their mail is on its way, is worse
-  -- than the silence it replaced. There is no code entry on it either: a refusal mints a decoy
+  -- The other shape exists because the first one lies otherwise: telling somebody who has been
+  -- refused to go and open a link, under a heading saying their mail is on its way, describes
+  -- something that did not happen. There is no code entry on it either: a refusal mints a decoy
   -- attempt cookie, so whatever code an earlier link produced can no longer be spent.
   sent context message :=
     match message with

@@ -104,8 +104,8 @@ def conversationView (messages : Array Msg) (turn : Option TurnState) : Node .fl
 
 /-! ## The panel -/
 
-/-- Reading a transcript is reading the end of it, so the browser is asked to put the newest
-message in view whenever this is swapped, which is what `chat.js` listens for. -/
+/-- The `chat-panel` id is load-bearing beyond the stylesheet: `chat.js` measures this element to
+keep a width the divider was dragged to inside the limit a narrowed window imposes. -/
 def chatPanel (messages : Array Msg) (turn : Option TurnState) : Node .flow :=
   aside
     [ div
