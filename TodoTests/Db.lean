@@ -132,6 +132,34 @@ private def testConcurrentWrites (db : Conn) (schema : String) : IO Unit :=
     checkEq "every overlapping write landed exactly once" writes
       (← Async.block (runTelemetry (store.list alice .all))).size
 
+/-- A message as something a failure can be reported through, since `LLMClient.Msg` has no `Repr`.
+Every field the table holds is in here, so a column read back into the wrong one shows up. -/
+private def shapeOf : LLMClient.Msg → String × String × String
+  | .user text => ("user", text, "")
+  | .assistant text calls => ("assistant", text, Json.compress (toolCallsJson calls))
+  | .toolResult id output => ("tool", output, id)
+
+/-- The transcript survives the trip through the columns it is kept in, tool calls and all.
+`toMsg_ofMsg` settles the encoding itself; this is the half of the round trip that theorem
+deliberately does not reach, where the model's arbitrary JSON becomes column text and back, and
+where `Postgres.Row` matches fields to columns by position rather than by name. -/
+private def testChatMessagesSurviveTheTable (db : Conn) : IO Unit := do
+  execScript db "TRUNCATE chat_messages RESTART IDENTITY"
+  let call : LLMClient.ToolCall :=
+    { id := "call-1", name := "add_todo"
+      input := Json.mkObj [("title", "buy milk"), ("urgent", true)] }
+  let written : Array LLMClient.Msg :=
+    #[.user "add buy milk", .assistant "Adding it." #[call], .toolResult "call-1" "added"]
+  Db.chatAppend db alice written
+  Db.chatAppend db bob #[.user "somebody else's"]
+  checkEq "read back in the order they were written, unaltered" (written.map shapeOf)
+    ((← Db.chatHistory db alice).map shapeOf)
+  checkEq "and one account's conversation is not another's" #[("user", "somebody else's", "")]
+    ((← Db.chatHistory db bob).map shapeOf)
+  Db.chatClear db alice
+  checkEq "clearing forgets one account's" 0 (← Db.chatHistory db alice).size
+  checkEq "and leaves the other's" 1 (← Db.chatHistory db bob).size
+
 def runDbTests : IO Unit :=
   withTestSchema fun db schema => do
     testAddStoresWhatNormalisationAdmits db
@@ -139,6 +167,7 @@ def runDbTests : IO Unit :=
     testToggleAll db
     testListFiltersAndClearCompleted db
     testStatementsAreScopedToTheAccount db
+    testChatMessagesSurviveTheTable db
     testConcurrentWrites db schema
 
 end TodoTests

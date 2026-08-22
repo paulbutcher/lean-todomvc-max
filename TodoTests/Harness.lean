@@ -7,6 +7,7 @@ module
 
 public import Todo.Auth
 public import Todo.Store
+public import Todo.ChatTurn
 
 public section
 
@@ -56,6 +57,8 @@ def memoryStore (owner : Account) (initial : Array Item) : IO Store := do
       match normalisedTitle raw with
       | none => remove account id
       | some title => modifyItem account id ({ · with title })
+    setCompleted := fun account id completed => do
+      modifyItem account id ({ · with completed })
     toggleAll := fun account => do
       let anyActive := (← mine account).any (!·.completed)
       items.modify (·.map fun (holder, item) =>
@@ -77,5 +80,62 @@ def anonymousIdentity : Auth.Identity where
   of := fun _ => pure none
   address := fun _ => pure none
   signOut := fun _ _ => pure ()
+
+/-! ## The assistant -/
+
+/-- A `ChatStore` with no database behind it, keeping each account's messages apart the way the
+real one does so that a test can check that they stay apart. -/
+def memoryChatStore : IO ChatStore := do
+  let messages ← IO.mkRef (#[] : Array (String × LLMClient.Msg))
+  pure {
+    history := fun account => do
+      pure ((← messages.get).filterMap fun (holder, msg) =>
+        if holder == account.value then some msg else none)
+    append := fun account added =>
+      messages.modify (· ++ added.map (account.value, ·))
+    clear := fun account =>
+      messages.modify (·.filter fun (holder, _) => holder != account.value)
+  }
+
+/-- A provider that answers from a script instead of a model, one reply per request, and refuses
+once the script runs out rather than repeating its last line.
+
+`gate` is awaited before each reply, which is what lets a test look at the panel while a turn is
+still running: resolving it is the only thing that lets the turn finish, so "before" and "after"
+are positions a test can actually stand in rather than durations it has to guess at. -/
+def scriptedProvider (replies : Array LLMClient.Reply) (gate : Option (IO.Promise Unit) := none) :
+    IO LLMClient.Provider := do
+  let remaining ← IO.mkRef replies
+  pure {
+    name := "scripted"
+    sendRequest := fun _ _ => do
+      -- Branching on the result is what forces it: binding it and discarding it would leave the
+      -- task unevaluated and the gate would hold nothing up.
+      if let some gate := gate then
+        if gate.result?.get |>.isNone then
+          return .error "the gate was dropped before it opened"
+      match ← remaining.modifyGet (fun rs => (rs[0]?, rs.extract 1 rs.size)) with
+      | some reply => pure (.ok reply)
+      | none => pure (.error "the script ran out of replies")
+  }
+
+def scriptedAssistant (replies : Array LLMClient.Reply)
+    (gate : Option (IO.Promise Unit) := none) : IO Assistant := do
+  pure
+    { provider := scriptedProvider replies gate
+      chat := ← memoryChatStore
+      turns := ← Turns.new }
+
+/-- Waits for whatever turn is in flight to stop being in flight, or gives up.
+
+Turns run on a thread of their own, so a test that looked once would be reading a race. The bound
+is what keeps a turn that never finishes from hanging the suite instead of failing it. -/
+def awaitTurn (turns : Turns) (account : Account) (label : String)
+    (attempts : Nat := 200) : IO Unit := do
+  for _ in [0:attempts] do
+    match ← turns.get account with
+    | some state => if state.phase.isRunning then IO.sleep 10 else return ()
+    | none => return ()
+  throw (IO.userError s!"{label}: the turn was still running after {attempts} attempts")
 
 end TodoTests

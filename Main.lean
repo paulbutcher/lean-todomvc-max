@@ -44,6 +44,23 @@ deployed function takes its own from the environment and will not start without 
 def developmentPepper : Authentication.Pepper :=
   { keyId := ⟨"development"⟩, secret := "todomvc-development-pepper".toUTF8 }
 
+/-- The panel, pointed at Bedrock in whichever region the environment names.
+
+Nothing here fails when there are no credentials to be had, and deliberately: the server is
+worth running without an assistant, and a turn that cannot be signed reports that in the panel
+rather than keeping the list from starting. The region has no such fallback, so `us-east-1`
+stands in and is wrong in a way the first turn says out loud. -/
+def assistant (pool : Postgres.Pool) : IO Todo.Assistant := do
+  let region := (← LLMClient.Bedrock.regionFromEnv).getD "us-east-1"
+  let credentials : IO Aws.Sigv4.Credentials := do
+    match ← LLMClient.Bedrock.credentialsFromEnv with
+    | .ok credentials => pure credentials
+    | .error message => throw (IO.userError message)
+  pure
+    { provider := Todo.bedrockProvider credentials region
+      chat := Todo.Db.chatStore pool
+      turns := ← Todo.Turns.new }
+
 /-- With nothing in the environment set this installs the console exporter in its readable format,
 so a developer gets a trace per request on the terminal and no configuration to do. -/
 def main : IO Unit := Async.block do
@@ -52,6 +69,7 @@ def main : IO Unit := Async.block do
     let port ← port
     let pool ← Postgres.Pool.create "" poolSize
     runTelemetry (spanning "migrate" (liftM (Postgres.Pool.withConnAsync pool Todo.migrate)))
+    let assistant ← assistant pool
     let sessions ← Middleware.MemoryStore.new
     let site := Todo.Auth.site pool
       { pepper := developmentPepper
@@ -61,7 +79,7 @@ def main : IO Unit := Async.block do
         transport := Authentication.EmailTransport.console }
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
     let server ← serve addr
-      (Todo.server site.identity site.handler (Todo.Db.store pool) sessions)
+      (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions)
     IO.println s!"Listening on http://{server.localAddr.get!}"
     server.waitShutdown
   finally

@@ -1,0 +1,303 @@
+/*
+Copyright (c) 2026 Paul Butcher. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+*/
+
+/* The split. `todomvc-app-css` styles the list itself and is loaded unmodified; everything here
+   is the frame around it, so the list still looks like the one the spec describes.
+
+   The panel's width is a custom property because the divider drag is the only thing that sets it,
+   and setting one property is the whole of what dragging has to do. */
+:root {
+  --chat-width: 26rem;
+  --chat-divider-width: 6px;
+  --chat-border: #ededed;
+  --chat-ink: #4d4d4d;
+  --chat-muted: #949494;
+  --chat-accent: #b83f45;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+  align-items: stretch;
+}
+
+/* The list keeps its own centred layout and scrolls within its half rather than moving the page,
+   so the panel beside it stays put while a long list is read. */
+.app-pane {
+  flex: 1 1 auto;
+  min-width: 20rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app-divider {
+  flex: 0 0 var(--chat-divider-width);
+  cursor: col-resize;
+  background: var(--chat-border);
+  border: none;
+  touch-action: none;
+}
+
+.app-divider:hover,
+.app-divider.dragging {
+  background: var(--chat-accent);
+}
+
+.chat-panel {
+  flex: 0 0 var(--chat-width);
+  min-width: 18rem;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-left: 1px solid var(--chat-border);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--chat-ink);
+}
+
+/* Dragging over an iframe-free page still loses the pointer to text selection without this; the
+   script adds the class to `body` for the duration of a drag. */
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--chat-border);
+}
+
+.chat-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.chat-reset {
+  border: 1px solid var(--chat-border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--chat-muted);
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.chat-reset:hover {
+  color: var(--chat-accent);
+  border-color: var(--chat-accent);
+}
+
+.chat-conversation {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.chat-empty {
+  color: var(--chat-muted);
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.chat-message {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-message.from-user {
+  align-items: flex-end;
+}
+
+.chat-message.from-assistant {
+  align-items: flex-start;
+}
+
+.chat-bubble {
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+
+.from-user .chat-bubble {
+  background: var(--chat-accent);
+  color: #fff;
+  white-space: pre-wrap;
+}
+
+.from-assistant .chat-bubble {
+  background: #f5f5f5;
+}
+
+/* Markdown arrives as whole blocks, so the first and last need their margins taken off to sit in
+   a bubble sized to them. */
+.chat-bubble > :first-child {
+  margin-top: 0;
+}
+
+.chat-bubble > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-bubble pre {
+  overflow-x: auto;
+  background: #ebebeb;
+  padding: 0.5rem;
+  border-radius: 6px;
+}
+
+.chat-bubble code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.chat-bubble table {
+  border-collapse: collapse;
+}
+
+.chat-bubble th,
+.chat-bubble td {
+  border: 1px solid var(--chat-border);
+  padding: 0.2rem 0.4rem;
+}
+
+/* What the model is calling, or has called. A tool the model asked for is shown whether the turn
+   is still running or long finished, so a reply can be read against what it was drawn from. */
+.chat-tools {
+  list-style: none;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--chat-muted);
+}
+
+.chat-tool {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.chat-tool::before {
+  content: "✓";
+  color: #6aa84f;
+}
+
+.chat-tool.running::before {
+  content: "◍";
+  color: var(--chat-accent);
+  animation: chat-pulse 1s ease-in-out infinite;
+}
+
+.chat-tool-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chat-thinking span::after {
+  content: "…";
+  animation: chat-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-thinking {
+  color: var(--chat-muted);
+}
+
+.chat-error {
+  background: #fdecea;
+  color: #a4271f;
+}
+
+@keyframes chat-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-tool.running::before,
+  .chat-thinking span::after {
+    animation: none;
+  }
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--chat-border);
+}
+
+.chat-prompt {
+  flex: 1 1 auto;
+  resize: none;
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid var(--chat-border);
+  border-radius: 6px;
+}
+
+.chat-prompt:focus {
+  outline: none;
+  border-color: var(--chat-accent);
+}
+
+.chat-send {
+  border: none;
+  border-radius: 6px;
+  background: var(--chat-accent);
+  color: #fff;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+}
+
+.chat-send:hover {
+  filter: brightness(1.08);
+}
+
+/* Below this there is no room for two columns, so the panel goes under the list rather than
+   squeezing it. The divider has nothing left to drag and is taken out of the flow. */
+@media (max-width: 48rem) {
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .app-pane {
+    overflow: visible;
+  }
+
+  .app-divider {
+    display: none;
+  }
+
+  .chat-panel {
+    flex: 1 1 auto;
+    height: 80vh;
+    border-left: none;
+    border-top: 1px solid var(--chat-border);
+  }
+}

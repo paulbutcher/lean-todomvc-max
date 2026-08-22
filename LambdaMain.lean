@@ -93,6 +93,22 @@ def authSettings : IO Todo.Auth.Settings := do
       transport := Todo.Auth.refreshing awsCredentials fun credentials =>
         Authentication.Ses.transport { region, credentials } }
 
+/-- The panel, signed with the same execution role everything else here is.
+
+`awsCredentials` is passed rather than called, for the reason it documents: the runtime replaces
+those variables underneath a warm environment, and a turn hours after the cold start has to sign
+with what is there then. `AWS_REGION` is set by the runtime and is the region the function is
+deployed in, which is where the model has to be enabled.
+
+Nothing here fails on a region it cannot find, because the failure belongs in the panel rather
+than in the init that would take the todo list down with it. -/
+def assistant (pool : Postgres.Pool) : IO Todo.Assistant := do
+  let region := (← IO.getEnv "AWS_REGION").getD "us-east-1"
+  pure
+    { provider := Todo.bedrockProvider awsCredentials region
+      chat := Todo.Db.chatStore pool
+      turns := ← Todo.Turns.new }
+
 /-- Only timeouts: everything identifying the database comes from the `PG*` variables the
 deployment sets, and libpq has no environment variable for either of these.
 
@@ -138,6 +154,8 @@ def main : IO Unit := AwsLambda.serve do
   runTelemetry (spanning "migrate" (liftM (Postgres.Pool.withConnAsync pool Todo.migrate)))
   let sessions ← sessionStore
   let site := Todo.Auth.site pool (← authSettings)
+  let assistant ← assistant pool
   -- A function URL is reachable over https only, so TLS termination is a given here.
   pure (AwsLambda.Http.handler
-    (Todo.server site.identity site.handler (Todo.Db.store pool) sessions (https := true)))
+    (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions
+      (https := true)))

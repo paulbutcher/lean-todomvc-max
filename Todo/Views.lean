@@ -9,6 +9,7 @@ public import Html
 public import Htmx
 public import Todo.Store
 public import Todo.Links
+public import Todo.ChatViews
 
 @[expose] public section
 
@@ -27,6 +28,15 @@ def todomvcCss : LinkAttrs :=
 
 def favicon : LinkAttrs :=
   { rel := "icon", href := "/favicon.svg" }
+
+/-- The panel and the split it sits in. Separate from `todomvcCss`, which is the unmodified
+TodoMVC stylesheet and is left that way: the list still has to look like the one the spec
+describes, and everything here is around it rather than in it. -/
+def chatCss : LinkAttrs :=
+  { rel := "stylesheet", href := "/chat.css" }
+
+def chatScript : ScriptAttrs :=
+  { src := "/chat.js" }
 
 /-- Puts the anti-forgery token on `<body>` as an `hx-headers` attribute, which HTMX inherits
 down the whole tree, so every mutating request below carries it. `none` when no `antiForgery`
@@ -122,29 +132,42 @@ def accountFooter (address : Option String) : Node .flow :=
               { class_ := "sign-out", hxPost := links.signOut } : Node .flow) ])
     { class_ := "info" }
 
-def pageView (csrfToken : Option String) (address : Option String) (items allItems : Array Item)
+/-- The list and the panel side by side, with a divider between them that `chat.js` makes
+draggable. The width the drag settles on is the browser's to remember, not the server's: it is a
+property of the window being read in, not of the account, and an account read on two screens
+wants two different answers. -/
+def appShell (address : Option String) (messages : Array LLMClient.Msg) (turn : Option TurnState)
+    (main : List (Node .flow)) : Node .flow :=
+  div
+    [ div (main ++ [accountFooter address]) { class_ := "app-pane", id := "app-pane" },
+      div [] { class_ := "app-divider", id := "app-divider" },
+      chatPanel messages turn ]
+    { class_ := "app-shell" }
+
+def pageView (csrfToken : Option String) (address : Option String)
+    (messages : Array LLMClient.Msg) (turn : Option TurnState) (items allItems : Array Item)
     (filter : Filter) : String :=
   document
     [ head
-        [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, link todomvcCss,
-          link favicon ],
+        [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, script chatScript,
+          link todomvcCss, link chatCss, link favicon ],
       body
-        [ section_
-            [ header
-                [ h1 ["todos"],
-                  Htmx.form
-                    [ input
-                        { name := "title", placeholder := "What needs to be done?",
-                          class_ := "new-todo" }
-                        [("autofocus", "autofocus")] ]
-                    { hxPost := links.todos, hxTarget := "#todo-list-section",
-                      hxSwap := some .outerHTML,
-                      hxOnHtmx := [("after-request", "this.reset()")] } ]
-                { class_ := "header" },
-              listSection items,
-              footerFragment allItems filter ]
-            { class_ := "todoapp" },
-          accountFooter address ]
+        [ appShell address messages turn
+            [ section_
+                [ header
+                    [ h1 ["todos"],
+                      Htmx.form
+                        [ input
+                            { name := "title", placeholder := "What needs to be done?",
+                              class_ := "new-todo" }
+                            [("autofocus", "autofocus")] ]
+                        { hxPost := links.todos, hxTarget := "#todo-list-section",
+                          hxSwap := some .outerHTML,
+                          hxOnHtmx := [("after-request", "this.reset()")] } ]
+                    { class_ := "header" },
+                  listSection items,
+                  footerFragment allItems filter ]
+                { class_ := "todoapp" } ] ]
         (rawAttrs := csrfAttrs csrfToken) ]
     (lang := "en")
 

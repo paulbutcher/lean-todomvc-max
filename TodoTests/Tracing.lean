@@ -29,7 +29,8 @@ private def serverOf (store : Store) : IO TestHandler := do
   let sessions ← Middleware.MemoryStore.new
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
-  pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store sessions).onRequest
+  pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store
+    (← scriptedAssistant #[]) sessions).onRequest
 
 private def spansFor (handler : TestHandler) (raw : String)
     (expect : ByteArray → IO Unit := fun _ => pure ()) : IO (Array SpanData) := do
@@ -67,6 +68,7 @@ private def spyStore (seen : IO.Ref (Array (Option SpanContext))) : Store where
   toggle _ _ := do seen.modify (·.push (← currentSpan))
   delete _ _ := do seen.modify (·.push (← currentSpan))
   setTitle _ _ _ := do seen.modify (·.push (← currentSpan))
+  setCompleted _ _ _ := do seen.modify (·.push (← currentSpan))
   toggleAll _ := do seen.modify (·.push (← currentSpan))
   clearCompleted _ := do seen.modify (·.push (← currentSpan))
 
@@ -92,6 +94,7 @@ private def failingStore (message : String) : Store where
   toggle _ _ := failWith message
   delete _ _ := failWith message
   setTitle _ _ _ := failWith message
+  setCompleted _ _ _ := failWith message
   toggleAll _ := failWith message
   clearCompleted _ := failWith message
 

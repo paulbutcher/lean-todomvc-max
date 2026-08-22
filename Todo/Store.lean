@@ -54,6 +54,7 @@ structure Store where
   toggle : Account → Int64 → TelemetryT Async Unit
   delete : Account → Int64 → TelemetryT Async Unit
   setTitle : Account → Int64 → String → TelemetryT Async Unit
+  setCompleted : Account → Int64 → Bool → TelemetryT Async Unit
   toggleAll : Account → TelemetryT Async Unit
   clearCompleted : Account → TelemetryT Async Unit
 

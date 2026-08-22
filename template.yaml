@@ -36,6 +36,15 @@ Parameters:
       The address sign-in mail is sent from. Its domain needs SPF, DKIM, DMARC and an MX record
       (a null MX will do) before mail is delivered rather than filed as spam.
 
+  BedrockModel:
+    Type: String
+    Default: ""
+    Description: >-
+      Which model the assistant panel talks to, as Bedrock's Converse API names it. Empty leaves
+      the client's own default in place. A model has to be enabled in this region before it will
+      answer, and the id an account uses may be a cross-region inference profile rather than a
+      foundation model, so this is deliberately not settled in the application.
+
   PepperKeyId:
     Type: String
     Default: "1"
@@ -116,6 +125,39 @@ Resources:
       PrivateDnsEnabled: true
       SubnetIds: [!Ref Subnet1, !Ref Subnet2]
       SecurityGroupIds: [!Ref SesEndpointSecurityGroup]
+
+  # The assistant reaches Bedrock the same way mail reaches SES, and for the same reason: this VPC
+  # has no route out, so a signed request to `bedrock-runtime.<region>.amazonaws.com` resolves
+  # here or it resolves nowhere. Without it a turn fails on connect, minutes into a deployment
+  # that otherwise looks healthy.
+  #
+  # Bedrock has two endpoint services and this is the one that carries inference: `.bedrock` is
+  # the control plane, and an endpoint for it would deploy cleanly and still refuse every turn.
+  #
+  # As with SES, check the region offers it and that both subnets are in zones it serves:
+  #
+  #   aws ec2 describe-vpc-endpoint-services \
+  #     --filters Name=service-name,Values=com.amazonaws.<region>.bedrock-runtime
+  BedrockEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Bedrock runtime interface endpoint for ${AWS::StackName}"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !GetAtt VPC.CidrBlock
+
+  BedrockEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.bedrock-runtime"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref Subnet1, !Ref Subnet2]
+      SecurityGroupIds: [!Ref BedrockEndpointSecurityGroup]
 
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
@@ -228,6 +270,17 @@ Resources:
             - Effect: Allow
               Action: [ses:SendEmail]
               Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+        # Both forms, because `BedrockModel` may name either: an inference profile is reached
+        # through its own ARN and fans out to foundation models, so granting the profile alone
+        # fails on the model behind it. Any model in the region rather than the one named, for
+        # the reason SES above is granted every identity: a policy that has to be changed in step
+        # with a parameter deploys cleanly and then refuses the first turn.
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel]
+              Resource:
+                - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+                - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*"
       Environment:
         Variables:
           # `Postgres.open ""` passes an empty connection string to libpq, which then reads all
@@ -245,6 +298,7 @@ Resources:
           AUTH_PEPPER_KEY_ID: !Ref PepperKeyId
           BASE_URL: !Ref BaseUrl
           MAIL_FROM: !Ref MailFrom
+          BEDROCK_MODEL: !Ref BedrockModel
           OTEL_SERVICE_NAME: todomvc
           # Telemetry leaves as JSON on stdout, which the runtime forwards to CloudWatch Logs.
           # That path belongs to the Lambda service rather than to this function's network

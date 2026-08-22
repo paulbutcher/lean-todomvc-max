@@ -19,4 +19,6 @@ route_table Routes
     toggle          := "/todos/:id:Nat/toggle",
     toggleAll       := "/todos/toggle-all",
     clearCompleted  := "/todos/clear-completed",
-    signOut         := "/signout" ]
+    signOut         := "/signout",
+    chat            := "/chat",
+    chatStatus      := "/chat/status" ]

@@ -6,6 +6,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import TodoTests.App
+public import TodoTests.Chat
 public import TodoTests.Auth
 public import TodoTests.Db
 public import TodoTests.Logs
@@ -22,6 +23,7 @@ checked by the time this builds, so only the ones that need to execute appear he
 def runAll : IO Unit := do
   runAppTests
   runAuthTests
+  runChatTests
   runTracingTests
   runLogsTests
   runDbTests

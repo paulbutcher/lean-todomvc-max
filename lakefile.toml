@@ -28,6 +28,16 @@ git = "https://github.com/paulbutcher/lean-html"
 rev = "v0.7.0"
 
 [[require]]
+name = "markdown"
+git = "https://github.com/paulbutcher/lean-markdown"
+rev = "v0.5.0"
+
+[[require]]
+name = "LLMClient"
+git = "https://github.com/paulbutcher/lean-llmclient"
+rev = "v0.6.0"
+
+[[require]]
 name = "htmx"
 git = "https://github.com/paulbutcher/lean-htmx"
 rev = "v0.6.0"

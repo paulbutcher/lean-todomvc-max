@@ -9,6 +9,10 @@ public import Todo.Tenant
 public import Todo.Auth
 public import Todo.AuthViews
 public import Todo.Store
+public import Todo.Chat
+public import Todo.ChatTools
+public import Todo.ChatTurn
+public import Todo.ChatViews
 public import Todo.Db
 public import Todo.Migrations
 public import Todo.Links

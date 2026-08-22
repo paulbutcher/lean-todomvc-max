@@ -14,6 +14,7 @@ public import Todo.Auth
 public import Todo.Store
 public import Todo.Links
 public import Todo.Views
+public import Todo.ChatTurn
 
 public section
 
@@ -74,11 +75,16 @@ def renderMutation (store : Store) (account : Account) (req : Request Body.Strea
 
 /-! ## Handlers -/
 
-def pageHandler (filter : Filter) (store : Store) (identity : Identity) (account : Account)
-    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+def pageHandler (filter : Filter) (store : Store) (assistant : Assistant) (identity : Identity)
+    (account : Account) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let address ← (identity.address account : IO _)
-  render store account (parentSpan req) filter
-    (pageView ((req.extensions.get AntiForgeryToken).map (·.value)) address)
+  let parent := parentSpan req
+  let messages ← (assistant.chat.history account).run parent
+  -- A reload during a turn rejoins it rather than showing a conversation that stops mid-question:
+  -- the panel comes back polling, exactly as the request that started the turn left it.
+  let turn ← (assistant.turns.get account : IO _)
+  render store account parent filter
+    (pageView ((req.extensions.get AntiForgeryToken).map (·.value)) address messages turn)
 
 /-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the store changes), so
 unlike every other route below it targets and returns just that one item, not the whole list
@@ -144,6 +150,86 @@ def signOutHandler (identity : Identity) (account : Account) (req : Request Body
       headers := response.line.headers.insert Header.Name.setCookie cleared } }
     (Header.Name.mk "hx-redirect") signInPath)
 
+/-! ## The assistant panel -/
+
+def prompt? (req : Request Body.Stream) : Option String :=
+  ((req.extensions.get Params).bind (·.get "prompt")).map (·.trimAscii.toString)
+    |>.filter (!·.isEmpty)
+
+/-- The panel's transcript, which is what every route below answers with: each of them changes
+what the conversation is and then shows what it has become, so none of them needs a reply shape
+of its own. -/
+def conversation (assistant : Assistant) (account : Account) (parent : Option SpanContext) :
+    ContextAsync (Response Body.Any) := do
+  let messages ← (assistant.chat.history account).run parent
+  let turn ← (assistant.turns.get account : IO _)
+  Node.render (conversationView messages turn) |> Response.ok.html
+
+/-- Takes a prompt, starts a turn for it, and answers with the transcript the prompt is now in,
+without waiting for a word of the reply. That is what puts the prompt on the page as soon as it
+is sent; the reply arrives through `chatStatusHandler` as the panel polls for it.
+
+Claiming the turn before storing the prompt is what keeps a second prompt sent during a turn from
+being stored with nothing to answer it: it is dropped instead, and the panel it returns to is
+already showing the turn that is running.
+
+A blank prompt is not a turn. It re-renders, which is what an empty send should look like. -/
+def chatHandler (store : Store) (assistant : Assistant) (account : Account)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  let parent := parentSpan req
+  if let some prompt := prompt? req then
+    if ← (assistant.turns.claim account : IO _) then
+      (assistant.chat.append account #[.user prompt]).run parent
+      (startTurn assistant store account parent : IO Unit)
+  conversation assistant account parent
+
+/-- How long a poll waits for the turn to move before answering with where it had got to, and how
+often it looks while it waits.
+
+Waiting rather than answering at once is what makes this work on a deployment that freezes the
+execution environment between invocations: the turn runs on a thread of its own, and that thread
+is only scheduled while an invocation is in flight. A poll that returned immediately would leave
+it frozen for all but a sliver of each interval, and a turn would take minutes of wall clock to
+do seconds of work.
+
+Well inside the deployed function's own timeout, so a turn that runs long is a series of polls
+that each return something rather than one that is cut off. -/
+private def pollWait : Nat := 25
+private def pollInterval : Std.Time.Millisecond.Offset := 200
+
+/-- One poll, held open until the turn moves or `pollWait` intervals go by.
+
+Reading a failed turn is what clears it, so the message is shown once and the panel showing it
+has already stopped asking; leaving it would report the same failure against every turn after it.
+
+`Async.sleep` rather than blocking: this is a fiber sharing its thread with every other request in
+flight, and holding the thread for the wait would stall all of them. -/
+def chatStatusHandler (assistant : Assistant) (account : Account) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  let mut turn ← (assistant.turns.get account : IO _)
+  for _ in [0:pollWait] do
+    if !turn.any (·.phase.isRunning) then break
+    liftM (Async.sleep pollInterval)
+    turn ← (assistant.turns.get account : IO _)
+  let messages ← (assistant.chat.history account).run (parentSpan req)
+  if turn.any (!·.phase.isRunning) then (assistant.turns.finish account : IO Unit)
+  Node.render (conversationView messages turn) |> Response.ok.html
+
+/-- Forgets the conversation, so that the next prompt is answered without what came before it
+being replayed to the model.
+
+A turn in flight is left alone, and so is the transcript under it: the reply is already being
+written and would land in the emptied conversation looking like an answer to whatever was asked
+next. Whoever asked can clear it once it has arrived. -/
+def chatResetHandler (assistant : Assistant) (account : Account) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  let parent := parentSpan req
+  let turn ← (assistant.turns.get account : IO _)
+  unless turn.any (·.phase.isRunning) do
+    (assistant.chat.clear account).run parent
+    (assistant.turns.finish account : IO Unit)
+  conversation assistant account parent
+
 /-! ## The router -/
 
 /-- Everything below needs to know who is asking, so establishing it is the router's job rather
@@ -155,14 +241,14 @@ private def guarded (identity : Identity)
   | some account => handler account req
   | none => toSignIn req
 
-def app (identity : Identity) (store : Store) : StatelessHandler :=
+def app (identity : Identity) (store : Store) (assistant : Assistant) : StatelessHandler :=
   let byId (handler : Store → Account → Nat → Request Body.Stream →
       ContextAsync (Response Body.Any)) := fun id =>
     guarded identity (handler store · id ·)
   toHandler [
-    .get patterns.index (guarded identity (pageHandler .all store identity)),
-    .get patterns.active (guarded identity (pageHandler .active store identity)),
-    .get patterns.completed (guarded identity (pageHandler .completed store identity)),
+    .get patterns.index (guarded identity (pageHandler .all store assistant identity)),
+    .get patterns.active (guarded identity (pageHandler .active store assistant identity)),
+    .get patterns.completed (guarded identity (pageHandler .completed store assistant identity)),
     .post patterns.todos (guarded identity (addHandler store)),
     .get patterns.edit (byId editHandler),
     .put patterns.todo (byId saveHandler),
@@ -170,7 +256,10 @@ def app (identity : Identity) (store : Store) : StatelessHandler :=
     .delete patterns.todo (byId deleteHandler),
     .post patterns.toggleAll (guarded identity (toggleAllHandler store)),
     .delete patterns.clearCompleted (guarded identity (clearCompletedHandler store)),
-    .post patterns.signOut (guarded identity (signOutHandler identity))
+    .post patterns.signOut (guarded identity (signOutHandler identity)),
+    .post patterns.chat (guarded identity (chatHandler store assistant)),
+    .get patterns.chatStatus (guarded identity (chatStatusHandler assistant)),
+    .delete patterns.chat (guarded identity (chatResetHandler assistant))
   ]
 
 /-- The sign-in routes carry an anti-forgery token of their own, derived from the attempt cookie
@@ -200,7 +289,7 @@ session cookie `secure` and sends `hsts`. Claiming it falsely is the damaging di
 `sslRedirect` is absent whichever way `https` goes, because neither deployment has a plaintext
 listener to redirect a caller away from. -/
 def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (store : Store)
-    (sessions : σ) (https : Bool := false) : StatelessHandler :=
+    (assistant : Assistant) (sessions : σ) (https : Bool := false) : StatelessHandler :=
   Middleware.apply
     ([forwardedScheme, forwardedRemoteAddr]
       ++ (if https then [hsts] else [])
@@ -217,6 +306,6 @@ def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (st
           defaultCharset,
           notModified,
           file "public"])
-    (split auth (Middleware.apply [antiForgery] (app identity store)))
+    (split auth (Middleware.apply [antiForgery] (app identity store assistant)))
 
 end Todo
