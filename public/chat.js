@@ -12,12 +12,20 @@ Released under Apache 2.0 license as described in the file LICENSE.
   var WIDTH_KEY = "todomvc-chat-width";
   var MIN_PANEL = 288; // Matches `.chat-panel { min-width }`.
   var MIN_PANE = 320; // Matches `.app-pane { min-width }`.
+  var DIVIDER = 6; // Matches `--chat-divider-width`.
 
+  // The panel runs from the divider's right edge to the window's, so the divider itself comes out
+  // of the width; without that the divider settles a few pixels away from the pointer that is
+  // dragging it, and the gap is worst exactly where the drag is pushed hardest.
   function setWidth(px) {
-    var limit = window.innerWidth - MIN_PANE;
+    var limit = window.innerWidth - MIN_PANE - DIVIDER;
     var width = Math.max(MIN_PANEL, Math.min(px, limit));
     document.documentElement.style.setProperty("--chat-width", width + "px");
     return width;
+  }
+
+  function widthFromPointer(clientX) {
+    return window.innerWidth - clientX - DIVIDER;
   }
 
   // The width belongs to the window being read in rather than to the account, so it is kept here
@@ -53,7 +61,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
   document.addEventListener("pointermove", function (event) {
     if (!dragging) return;
-    setWidth(window.innerWidth - event.clientX);
+    setWidth(widthFromPointer(event.clientX));
   });
 
   document.addEventListener("pointerup", function (event) {
@@ -62,13 +70,17 @@ Released under Apache 2.0 license as described in the file LICENSE.
     var divider = document.getElementById("app-divider");
     if (divider) divider.classList.remove("dragging");
     document.body.classList.remove("resizing");
-    rememberWidth(setWidth(window.innerWidth - event.clientX));
+    rememberWidth(setWidth(widthFromPointer(event.clientX)));
   });
 
   // A narrowed window can leave the panel wider than the limit that was in force when it was set.
+  //
+  // Measured off the panel rather than read back from `--chat-width`: a custom property that no
+  // drag has overwritten still holds the stylesheet's own `26rem`, and `parseInt` reads that as
+  // 26, which would collapse the panel to its minimum on the first resize of an untouched window.
   window.addEventListener("resize", function () {
-    var current = getComputedStyle(document.documentElement).getPropertyValue("--chat-width");
-    setWidth(parseInt(current, 10));
+    var panel = document.getElementById("chat-panel");
+    if (panel) setWidth(panel.getBoundingClientRect().width);
   });
 
   // Enter sends, Shift+Enter starts a line: the textarea is two rows because a prompt is

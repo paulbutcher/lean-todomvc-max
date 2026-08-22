@@ -22,8 +22,15 @@ body {
   height: 100%;
 }
 
+/* `todomvc-app-css` sizes the list by constraining `body` itself to 550px and centring it, which
+   is right when the list is the whole page and wrong now that it is one pane beside another: the
+   flex shell would be 550px wide, both panes would sit on their own `min-width` with nothing left
+   to give, and the divider would have nowhere to move to. The constraint moves to the pane's
+   contents below. */
 body {
   margin: 0;
+  min-width: 0;
+  max-width: none;
   overflow: hidden;
 }
 
@@ -40,6 +47,15 @@ body {
   min-width: 20rem;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* What `body` used to do for these two. Both keep the vertical margins `todomvc-app-css` gives
+   them and gain the horizontal centring it used to get from the page being 550px wide. */
+.app-pane .todoapp,
+.app-pane .info {
+  max-width: 550px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .app-divider {
