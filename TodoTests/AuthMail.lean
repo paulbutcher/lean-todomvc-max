@@ -67,23 +67,10 @@ private def testTheCodeAppearsOnlyWhenOneWasSent : IO Unit := do
   checkEq "the text part carries the code" true (contains spoken.textBody "K7M2-QP94")
   checkEq "the html part carries the code" true (contains (html spoken) "K7M2-QP94")
 
-private def testTheInvitationCarriesItsLinkAndItsExpiry : IO Unit := do
-  let accept := "https://todomvc.example/t/todomvc/invitation/accept?token=abc"
-  let mail := Todo.AuthMail.templates.invitation
-    { tenantName := "TodoMVC"
-      recipient := ⟨"alice", ⟨["example", "com"]⟩⟩
-      acceptLink := accept
-      expiresAt := ⟨1756474980⟩ }
-  checkEq "the text part carries the link" true (contains mail.textBody accept)
-  checkEq "the html part carries the link" true (contains (html mail) accept)
-  checkEq "and says when it stops working" true
-    (contains mail.textBody "29 August 2025 at 13:43 UTC")
-
 def runAuthMailTests : IO Unit :=
   runGroup "Todo.AuthMail" do
     testBothPartsCarryTheLink
     testTheTimeIsInWords
     testTheCodeAppearsOnlyWhenOneWasSent
-    testTheInvitationCarriesItsLinkAndItsExpiry
 
 end TodoTests

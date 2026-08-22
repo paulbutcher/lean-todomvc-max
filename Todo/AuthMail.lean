@@ -179,31 +179,15 @@ private def signIn (details : SignInDetails) : RenderedEmail :=
               ++ [note [aside [asked], aside [ignore]]]),
           footer s!"Sent to {recipient} by {details.tenantName}." ] }
 
-private def invitation (details : InvitationDetails) : RenderedEmail :=
-  let recipient := details.recipient.render
-  let expiry := s!"The invitation expires {inWords details.expiresAt}."
-  let ignore := "If you were not expecting it, you can ignore this message."
-  { subject := s!"You have been invited to {details.tenantName}"
-    textBody :=
-      s!"You have been invited to {details.tenantName} as {recipient}.\n\n" ++
-      s!"To accept, open:\n{details.acceptLink}\n\n" ++
-      s!"{expiry} {ignore}"
-    htmlBody := some <|
-      wrap s!"You have been invited to {details.tenantName}"
-        expiry <|
-        [ card
-            [ heading s!"You have been invited to {details.tenantName}",
-              line s!"The invitation is for {recipient}. Accepting it makes the list yours.",
-              action details.acceptLink "Accept the invitation",
-              fallback details.acceptLink,
-              note [aside [expiry], aside [ignore]] ],
-          footer s!"Sent to {recipient} by {details.tenantName}." ] }
+/-- What the library sends instead of its own sign-in bodies, which state the time as epoch
+seconds and carry no styling at all.
 
-/-- What the library sends instead of its own bodies. The default states the time as epoch
-seconds and carries no styling at all, neither of which is what somebody signing in to this
-application should be shown. -/
+The invitation is left with the library. Nothing here can create one: signing up is unrestricted,
+so an invitation would grant nothing that asking for a link does not, and no route in this
+application or in the library calls `Service.createInvitation`. A renderer is still required, and
+one written for a mail that is never sent would go stale unread. -/
 def templates : EmailTemplates where
   signIn := signIn
-  invitation := invitation
+  invitation := EmailTemplates.standard.invitation
 
 end Todo.AuthMail
