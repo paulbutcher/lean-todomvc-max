@@ -1,4 +1,4 @@
-# TodoMVC
+# TodoMVC Max
 
 [TodoMVC](https://todomvc.com) in Lean 4, with what a deployed application needs around it:
 passwordless sign-in, per-account lists, SQL migrations, OpenTelemetry spans and logs, and an
