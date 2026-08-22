@@ -250,6 +250,35 @@ private def testAFailedTurnIsReportedOnce : IO Unit := do
   check "the next one" (mkGetClose "/chat/status") handler fun response =>
     assertAbsent response "went wrong"
 
+/-- A turn can fail on the round trip that follows its tool calls, by which point those calls have
+already changed the list. The transcript has to say so: a conversation that performed a deletion
+and then never mentions it will have the model answering from a history that disagrees with what
+the person is looking at.
+
+The script holds one reply, so the tool call is answered and the request carrying its result back
+finds nothing left to say and fails. That is the shape of the real failure. -/
+private def testAFailedTurnStillRecordsWhatItsToolsDid : IO Unit := do
+  let assistant ← scriptedAssistant
+    #[{ text := "", toolCalls := #[{ id := "call_1", name := "add_todo",
+                                     input := Json.mkObj [("title", "gamma")] }] }]
+  let store ← memoryStore alice #[]
+  check "a prompt" (sendPrompt "prompt=add+gamma") (← panelOf assistant store) fun _ => pure ()
+  awaitTurn assistant.turns alice "the turn that fails after its tool ran"
+  checkEq "the tool really did change the list" #[("gamma", false)] (← titlesOf store)
+  checkEq "and the transcript says so, closing with a reply the next turn can follow"
+    #[("user", "add gamma"), ("assistant", ""), ("tool", "call_1"),
+      ("assistant", Todo.unfinishedNote)]
+    (← transcriptOf assistant)
+
+/-- The counterpart: a turn that fails before any tool runs has nothing to record, and a note on
+its own would be noise in a transcript that already ends on the unanswered prompt. -/
+private def testAFailureBeforeAnyToolRecordsNothing : IO Unit := do
+  let assistant ← scriptedAssistant #[]
+  let store ← memoryStore alice #[]
+  check "a prompt" (sendPrompt "prompt=anything") (← panelOf assistant store) fun _ => pure ()
+  awaitTurn assistant.turns alice "the turn that fails outright"
+  checkEq "the prompt stands alone" #[("user", "anything")] (← transcriptOf assistant)
+
 def runChatTests : IO Unit := do
   testEachToolChangesTheStore
   testSetDoneIsIdempotent
@@ -263,6 +292,8 @@ def runChatTests : IO Unit := do
   testABlankPromptStartsNothing
   testAFinishedTurnStopsThePolling
   testAFailedTurnIsReportedOnce
+  testAFailedTurnStillRecordsWhatItsToolsDid
+  testAFailureBeforeAnyToolRecordsNothing
   testResetForgetsTheConversation
 
 end TodoTests

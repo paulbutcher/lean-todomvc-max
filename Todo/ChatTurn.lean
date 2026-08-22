@@ -64,6 +64,26 @@ def bedrockProvider (fresh : IO Aws.Sigv4.Credentials) (region : String) : IO Pr
   pure (LLMClient.Bedrock.provider (← fresh)
     { defaults with model, maxOutputTokens, systemPrompt := some systemPrompt })
 
+/-- What is written in place of the reply a failed turn never produced.
+
+Not an apology: it is there so the conversation can be replayed at all. A history left ending on
+tool results ends mid-exchange, and both APIs behind `LLMClient` require roles to alternate, so
+the next prompt would sit against it as a second user turn and be refused. -/
+def unfinishedNote : String :=
+  "(This turn stopped before I could reply. Any tools listed above did run.)"
+
+/-- Stores whatever a failed turn got through before it failed, and closes it off.
+
+`stored` is what was already in the transcript and `reached` is what `converseLoop` had
+accumulated when it gave up; only the difference is new. Nothing is written when they are the
+same length, which is a turn that failed on its first request with no tool having run: there is
+no reply to explain the absence of, and a note on its own would be noise. -/
+def recordUnfinished (assistant : Assistant) (account : Account) (parent : Option SpanContext)
+    (stored reached : Array Msg) : IO Unit := do
+  if reached.size > stored.size then
+    let added := (reached.extract stored.size reached.size).push (.assistant unfinishedNote)
+    Async.block ((assistant.chat.append account added).run parent)
+
 /-- Runs one turn to completion and records what came of it, having been started by a request
 that has already answered and gone.
 
@@ -93,7 +113,12 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
         (ChatTools.run store account parent) history
         { maxIterations, onProgress }
       match result with
-      | .error message => assistant.turns.fail account message
+      | .error failure =>
+        -- A turn can fail after its tools have run, and those calls have already changed the
+        -- list. Storing what happened is what keeps the transcript honest about it; the
+        -- alternative is a conversation that never mentions the deletion it performed.
+        recordUnfinished assistant account parent history failure.history
+        assistant.turns.fail account failure.message
       | .ok (updated, _) =>
         -- Everything `converseLoop` added: what the model said, and a result per tool it called.
         -- The prefix is the history it was handed, which is already stored.
