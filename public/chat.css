@@ -71,7 +71,11 @@ body {
   background: var(--chat-accent);
 }
 
+/* Border-box so the left border falls inside `--chat-width` rather than being added to it: the
+   resize handler measures the panel and writes the result back, and a border outside the width
+   would be added again on every resize event. */
 .chat-panel {
+  box-sizing: border-box;
   flex: 0 0 var(--chat-width);
   min-width: 18rem;
   display: flex;
