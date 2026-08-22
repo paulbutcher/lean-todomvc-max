@@ -13,6 +13,10 @@
   "mounts": [
     "source=${localEnv:HOME}/.claude-devcontainer,target=/home/vscode/.claude,type=bind,consistency=cached"
   ],
+  
+  "postCreateCommand": {
+    "safeDirectory": "git config --global --add safe.directory ${containerWorkspaceFolder}"
+  },
 
   "containerEnv": {
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
