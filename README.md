@@ -6,6 +6,8 @@ deployment to AWS Lambda.
 
 The UI is HTMX plus a very little JavaScript.
 
+![The todo list with the assistant panel beside it](Screenshot.png)
+
 ## Why Lean?
 
 Lean is a strongly typed functional language with a built-in theorem prover. This allows us to 
