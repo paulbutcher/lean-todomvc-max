@@ -77,10 +77,19 @@ lake exe TodoMVC        # http://localhost:8080
 lake test               # uses the same database
 ```
 
-`libpq` reads the connection from the usual `PG*` variables. Migrations run at startup, so a fresh
-database needs nothing first; `lake exe migrate` applies and rolls them back by hand. Sign-in mail is
-printed to the terminal rather than sent, so following a magic link needs no mail server, and spans
-are printed there too in a readable form.
+`libpq` reads the connection from the usual `PG*` variables, and the role and database they name
+have to exist before the first run. [.devcontainer](.devcontainer/) sets them to `leantodomvc`;
+outside it, either export your own or create what the devcontainer expects:
+
+```
+createuser leantodomvc
+createdb -O leantodomvc leantodomvc
+export PGHOST=localhost PGUSER=leantodomvc PGDATABASE=leantodomvc
+```
+
+Migrations run at startup, so the database itself needs nothing in it; `lake exe migrate` applies
+and rolls them back by hand. Sign-in mail is printed to the terminal rather than sent, so following
+a magic link needs no mail server, and spans are printed there too in a readable form.
 
 For the assistant panel, anything that puts credentials in the environment will do:
 
@@ -100,6 +109,21 @@ queries.
 You need AWS credentials, a Docker that can build `linux/arm64`, and an SES identity for the
 address you will send from. Give its domain SPF, DKIM, DMARC and an MX record, and while the
 account is in the SES sandbox, verify the recipients too.
+
+Install the SAM CLI from the [first-party
+installer](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
+rather than from Homebrew, which is what [.devcontainer](.devcontainer/) does. The Homebrew
+formula builds against Homebrew's Python, whose `pyexpat` can be linked against a newer `libexpat`
+than macOS ships; the import that fails takes the `build` subcommand down with it, and what you see
+is `Error: No such command 'build'` rather than anything about the loader.
+
+Docker Desktop serves its socket from the user's home directory, and SAM looks for it in
+`/var/run`, so it reports no container runtime while `docker` itself works. Point it at the real
+one:
+
+```
+export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
+```
 
 ```
 sam build
@@ -133,6 +157,14 @@ forwards to CloudWatch Logs.
 
 ```
 sam logs --stack-name todomvc --tail | lake exe logs
+```
+
+The local server prints that readable form already, so there is nothing to render; to produce the
+flat rows here too, and so to exercise the same path without deploying, ask the console exporter
+for them:
+
+```
+OTEL_EXPORTER_CONSOLE_FORMAT=flat_json lake exe TodoMVC | lake exe logs
 ```
 
 The `Dashboard` stack output is a console URL for the dashboard the template creates: platform
