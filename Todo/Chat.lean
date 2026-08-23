@@ -33,6 +33,7 @@ structure ChatRow where
   body : String
   toolCalls : Json
   toolCallId : String
+  isError : Bool
 
 def toolCallJson (call : ToolCall) : Json :=
   Json.mkObj [("id", call.id), ("name", call.name), ("input", call.input)]
@@ -54,17 +55,19 @@ def toolCallsOfJson (j : Json) : Array ToolCall :=
   | .error _ => #[]
 
 def ChatRow.ofMsg : Msg → ChatRow
-  | .user text => { role := "user", body := text, toolCalls := Json.arr #[], toolCallId := "" }
+  | .user text =>
+    { role := "user", body := text, toolCalls := Json.arr #[], toolCallId := "", isError := false }
   | .assistant text calls =>
-    { role := "assistant", body := text, toolCalls := toolCallsJson calls, toolCallId := "" }
-  | .toolResult id output =>
-    { role := "tool", body := output, toolCalls := Json.arr #[], toolCallId := id }
+    { role := "assistant", body := text, toolCalls := toolCallsJson calls, toolCallId := "",
+      isError := false }
+  | .toolResult id output isError =>
+    { role := "tool", body := output, toolCalls := Json.arr #[], toolCallId := id, isError }
 
 /-- A role outside the three `ofMsg` writes is read as a user turn. Refusing it instead would
 make one unrecognised row hide the whole conversation behind it. -/
 def ChatRow.toMsg (row : ChatRow) : Msg :=
   if row.role == "assistant" then .assistant row.body (toolCallsOfJson row.toolCalls)
-  else if row.role == "tool" then .toolResult row.toolCallId row.body
+  else if row.role == "tool" then .toolResult row.toolCallId row.body row.isError
   else .user row.body
 
 /-! ## Storage -/

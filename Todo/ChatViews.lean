@@ -59,7 +59,7 @@ def messageView : Msg → List (Node .flow)
     let asked := toolList (calls.map (·.name)) (runningLast := false)
     if spoken.isEmpty && asked.isEmpty then []
     else [div (asked ++ spoken) { class_ := "chat-message from-assistant" }]
-  | .toolResult _ _ => []
+  | .toolResult .. => []
 
 /-- What the model is doing right now, which the transcript cannot show because none of it has
 been said yet. Absent once the turn is over, and that absence is also what stops the polling:

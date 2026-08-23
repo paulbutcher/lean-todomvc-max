@@ -114,6 +114,7 @@ private structure ChatMessageRow where
   body : String
   toolCalls : String
   toolCallId : String
+  isError : Bool
 deriving Postgres.Row
 
 /-- Unparseable `tool_calls` is read as no tool calls rather than as a reason to refuse the whole
@@ -122,12 +123,12 @@ the case is one a corrupted or hand-edited row reaches; losing what the model as
 for the person reading than losing the conversation around it. -/
 def chatHistory (db : Conn) (account : Account) : IO (Array LLMClient.Msg) := do
   let owner := account.value
-  let stmt ← db sql!"SELECT role, body, tool_calls, tool_call_id FROM chat_messages
+  let stmt ← db sql!"SELECT role, body, tool_calls, tool_call_id, is_error FROM chat_messages
                        WHERE account_id = {owner} ORDER BY id"
   let rows : Array ChatMessageRow ← stmt.results.toArray
   pure <| rows.map fun row =>
     ChatRow.toMsg
-      { role := row.role, body := row.body, toolCallId := row.toolCallId
+      { role := row.role, body := row.body, toolCallId := row.toolCallId, isError := row.isError
         toolCalls := (Json.parse row.toolCalls).toOption.getD (Json.arr #[]) }
 
 def chatAppend (db : Conn) (account : Account) (msgs : Array LLMClient.Msg) : IO Unit := do
@@ -135,8 +136,9 @@ def chatAppend (db : Conn) (account : Account) (msgs : Array LLMClient.Msg) : IO
   for msg in msgs do
     let row := ChatRow.ofMsg msg
     let toolCalls := Json.compress row.toolCalls
-    db exec!"INSERT INTO chat_messages (account_id, role, body, tool_calls, tool_call_id)
-               VALUES ({owner}, {row.role}, {row.body}, {toolCalls}, {row.toolCallId})"
+    db exec!"INSERT INTO chat_messages (account_id, role, body, tool_calls, tool_call_id, is_error)
+               VALUES ({owner}, {row.role}, {row.body}, {toolCalls}, {row.toolCallId},
+                       {row.isError})"
 
 def chatClear (db : Conn) (account : Account) : IO Unit :=
   let owner := account.value

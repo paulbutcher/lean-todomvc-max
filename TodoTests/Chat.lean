@@ -40,13 +40,30 @@ theorem toMsg_ofMsg (msg : Msg) : (ChatRow.ofMsg msg).toMsg = msg := by
 private def alpha : Item := { id := 1, title := "alpha", completed := false }
 private def beta : Item := { id := 2, title := "beta", completed := true }
 
-private def runTool (store : Store) (name : String) (input : List (String × Json)) : IO String :=
-  ChatTools.run store alice none name (Json.mkObj input)
+/-- One tool as a turn runs it, reached through the registry so that a test cannot exercise an
+implementation the model is not offered. -/
+private def runTool (store : Store) (name : String) (input : List (String × Json))
+    (account : Account := alice) : IO (Except String String) := do
+  let some entry := ChatTools.registry.find? (·.tool.name == name)
+    | throw (IO.userError s!"there is no tool called {name}")
+  entry.run store account none (Json.mkObj input)
 
 private def titlesOf (store : Store) (account : Account := alice) :
     IO (Array (String × Bool)) := do
   let items ← Async.block (runTelemetry (store.list account .all))
   pure (items.map fun item => (item.title, item.completed))
+
+/-- A call is dispatched to the first entry whose name matches, so a second entry sharing a name
+could never run, and the model would be offered a tool that does nothing its description says.
+Nothing about the registry's shape rules that out.
+
+`Nodup` over the fixed array would say the same thing to the kernel, but only if `Todo.ChatTools`
+were `@[expose]`, and that would mean making every argument reader and schema helper in it public
+to be reduced through. The array is a constant, so this is checked over the same data either
+way. -/
+private def testToolNamesAreDistinct : IO Unit := do
+  let names := (ChatTools.registry.map (·.tool.name)).toList
+  checkEq "every tool has a name of its own" names.length names.eraseDups.length
 
 /-- Every tool the model is offered reaches the store as its description says it does. A tool that
 silently did nothing is the failure that a model cannot report and a reader cannot see: the reply
@@ -81,7 +98,8 @@ private def testSetDoneIsIdempotent : IO Unit := do
 to be readable as JSON rather than as prose. -/
 private def testListTodosReportsIdsAsJson : IO Unit := do
   let store ← memoryStore alice #[alpha, beta]
-  let listed ← runTool store "list_todos" [("filter", "completed")]
+  let .ok listed ← runTool store "list_todos" [("filter", "completed")]
+    | throw (IO.userError "list_todos refused a call it should have answered")
   let .ok parsed := Json.parse listed
     | throw (IO.userError s!"list_todos did not return JSON: {listed}")
   let .ok items := parsed.getArr?
@@ -91,13 +109,16 @@ private def testListTodosReportsIdsAsJson : IO Unit := do
     (((items[0]?.getD Json.null).getObjVal? "id" >>= Json.getInt?).toOption)
 
 /-- A call the store cannot be asked to perform is refused and reported, not guessed at. An id
-that defaulted to something would name a real row belonging to somebody. -/
+that defaulted to something would name a real row belonging to somebody.
+
+That a refusal is decided before the store is reached is what lets `Todo.ChatTurn` treat one as
+having changed nothing, so the two halves are checked together. -/
 private def testUnusableCallsChangeNothing : IO Unit := do
   let store ← memoryStore alice #[alpha]
   let noId ← runTool store "delete_todo" [("title", "alpha")]
-  checkEq "a missing id is reported" true (noId.startsWith "error")
-  let unknown ← runTool store "reticulate_splines" []
-  checkEq "so is a tool that does not exist" true (unknown.startsWith "error")
+  checkEq "a missing id is refused" false noId.isOk
+  let blank ← runTool store "add_todo" [("title", "   ")]
+  checkEq "so is a title that is blank once trimmed" false blank.isOk
   checkEq "and neither of them touched anything" #[("alpha", false)] (← titlesOf store)
 
 /-- A tool runs as the account that asked for it, so an id belonging to somebody else matches
@@ -105,11 +126,10 @@ nothing. This is the store's own guarantee; what is checked here is that the too
 rather than around it. -/
 private def testToolsCannotReachAnotherAccount : IO Unit := do
   let store ← memoryStore alice #[alpha]
-  let asBob := ChatTools.run store bob none
-  discard <| asBob "delete_todo" (Json.mkObj [("id", Json.ofNat 1)])
+  discard <| runTool store "delete_todo" [("id", Json.ofNat 1)] (account := bob)
   checkEq "alice still has hers" #[("alpha", false)] (← titlesOf store)
-  let listed ← asBob "list_todos" (Json.mkObj [])
-  checkEq "and bob sees none of it" "[]" listed
+  let listed ← runTool store "list_todos" [] (account := bob)
+  checkEq "and bob sees none of it" (some "[]") listed.toOption
 
 /-! ## Turns -/
 
@@ -156,7 +176,7 @@ private def transcriptOf (assistant : Assistant) (account : Account := alice) :
   pure <| history.map fun
     | .user text => ("user", text)
     | .assistant text _ => ("assistant", text)
-    | .toolResult id _ => ("tool", id)
+    | .toolResult id .. => ("tool", id)
 
 private def sendPrompt (body : String) : String :=
   mkPost "/chat" body
@@ -271,6 +291,26 @@ private def testAFailedTurnStillRecordsWhatItsToolsDid : IO Unit := do
       ("assistant", Todo.unfinishedNote)]
     (← transcriptOf assistant)
 
+/-- What a poll refreshes the list against is a count of the calls that changed it, and a call
+that was refused changed nothing. Counting one would swap the list out from under somebody
+part-way through editing a todo, for nothing.
+
+Both halves are here because either alone would pass against a count that never moves at all.
+Neither script holds a reply after the tool call, so both turns fail, which is what leaves the
+count behind to be read: a turn that finished would have erased it. -/
+private def testOnlyToolsThatChangedSomethingAreCounted : IO Unit := do
+  let calling (title : String) : Array LLMClient.Reply :=
+    #[{ text := "", toolCalls := #[{ id := "call_1", name := "add_todo",
+                                     input := Json.mkObj [("title", title)] }] }]
+  let countAfter (title : String) : IO (Option Nat) := do
+    let assistant ← scriptedAssistant (calling title)
+    let store ← memoryStore alice #[]
+    check "a prompt" (sendPrompt "prompt=add+it") (← panelOf assistant store) fun _ => pure ()
+    awaitTurn assistant.turns alice "the turn that fails after its tool ran"
+    pure ((← assistant.turns.get alice).map (·.mutations))
+  checkEq "a call that added something counts" (some 1) (← countAfter "gamma")
+  checkEq "a call the tool refused does not" (some 0) (← countAfter "   ")
+
 /-- The counterpart: a turn that fails before any tool runs has nothing to record, and a note on
 its own would be noise in a transcript that already ends on the unanswered prompt. -/
 private def testAFailureBeforeAnyToolRecordsNothing : IO Unit := do
@@ -320,6 +360,7 @@ private def testAPollWithNothingNewLeavesTheListAlone : IO Unit := do
   awaitTurn assistant.turns alice "the gated turn"
 
 def runChatTests : IO Unit := do
+  testToolNamesAreDistinct
   testEachToolChangesTheStore
   testSetDoneIsIdempotent
   testListTodosReportsIdsAsJson
@@ -333,6 +374,7 @@ def runChatTests : IO Unit := do
   testAFinishedTurnStopsThePolling
   testAFailedTurnIsReportedOnce
   testAFailedTurnStillRecordsWhatItsToolsDid
+  testOnlyToolsThatChangedSomethingAreCounted
   testAFailureBeforeAnyToolRecordsNothing
   testAToolChangeReachesTheTodoList
   testAPollWithNothingNewLeavesTheListAlone

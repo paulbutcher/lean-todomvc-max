@@ -35,7 +35,7 @@ rev = "v0.5.0"
 [[require]]
 name = "LLMClient"
 git = "https://github.com/paulbutcher/lean-llmclient"
-rev = "v0.7.0"
+rev = "v0.8.0"
 
 [[require]]
 name = "htmx"

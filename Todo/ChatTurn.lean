@@ -98,7 +98,7 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
     TelemetryT IO Unit :=
   spanning "chat turn" do
     -- The turn's own span, not the request's: everything below outlives the request, and the
-    -- tools reach `ChatTools.run` through `converseLoop`, which fixes `IO` and so has nowhere
+    -- tools reach their entry through `converseLoop`, which fixes `IO` and so has nowhere
     -- for a context to travel implicitly.
     let parent ← currentSpan
     try
@@ -111,15 +111,17 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
             { state with phase := .callingTool name, tools := state.tools.push name }
       -- Counted after the call rather than in `onProgress`, which fires before one runs: a poll
       -- that refreshed on the announcement would read the list back as it was a moment earlier
-      -- and show the change as not having happened.
-      let runTool (name : String) (input : Json) : IO String := do
-        let output ← ChatTools.run store account parent name input
-        if ChatTools.mutates name then
-          assistant.turns.advance account fun state =>
-            { state with mutations := state.mutations + 1 }
-        pure output
-      let result ← LLMClient.converseLoop provider ChatTools.all runTool history
-        { maxIterations, onProgress }
+      -- and show the change as not having happened. A call that failed is not counted, because
+      -- every refusal `ChatTools` reports is decided before the store is reached.
+      let tools := ChatTools.registry.map fun entry =>
+        { tool := entry.tool
+          run := fun input => do
+            let result ← entry.run store account parent input
+            if entry.mutates && result.isOk then
+              assistant.turns.advance account fun state =>
+                { state with mutations := state.mutations + 1 }
+            pure result }
+      let result ← LLMClient.converseLoop provider tools history { maxIterations, onProgress }
       match result with
       | .error failure =>
         -- A turn can fail after its tools have run, and those calls have already changed the

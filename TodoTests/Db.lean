@@ -134,12 +134,14 @@ private def testConcurrentWrites (db : Conn) (schema : String) : IO Unit :=
 
 /-- A message as something a failure can be reported through, since `LLMClient.Msg` has no `Repr`.
 Every field the table holds is in here, so a column read back into the wrong one shows up. -/
-private def shapeOf : LLMClient.Msg → String × String × String
-  | .user text => ("user", text, "")
-  | .assistant text calls => ("assistant", text, Json.compress (toolCallsJson calls))
-  | .toolResult id output => ("tool", output, id)
+private def shapeOf : LLMClient.Msg → String × String × String × Bool
+  | .user text => ("user", text, "", false)
+  | .assistant text calls => ("assistant", text, Json.compress (toolCallsJson calls), false)
+  | .toolResult id output isError => ("tool", output, id, isError)
 
-/-- The transcript survives the trip through the columns it is kept in, tool calls and all.
+/-- The transcript survives the trip through the columns it is kept in, tool calls and all. A
+failed call is among them: it is the one message whose meaning is carried by something other than
+its text, and a column that came back false would turn it into an ordinary result.
 `toMsg_ofMsg` settles the encoding itself; this is the half of the round trip that theorem
 deliberately does not reach, where the model's arbitrary JSON becomes column text and back, and
 where `Postgres.Row` matches fields to columns by position rather than by name. -/
@@ -149,13 +151,14 @@ private def testChatMessagesSurviveTheTable (db : Conn) : IO Unit := do
     { id := "call-1", name := "add_todo"
       input := Json.mkObj [("title", "buy milk"), ("urgent", true)] }
   let written : Array LLMClient.Msg :=
-    #[.user "add buy milk", .assistant "Adding it." #[call], .toolResult "call-1" "added"]
+    #[.user "add buy milk", .assistant "Adding it." #[call], .toolResult "call-1" "added",
+      .toolResult "call-2" "that title is blank, so nothing was added" true]
   Db.chatAppend db alice written
   Db.chatAppend db bob #[.user "somebody else's"]
   checkEq "read back in the order they were written, unaltered" (written.map shapeOf)
     ((← Db.chatHistory db alice).map shapeOf)
-  checkEq "and one account's conversation is not another's" #[("user", "somebody else's", "")]
-    ((← Db.chatHistory db bob).map shapeOf)
+  checkEq "and one account's conversation is not another's"
+    #[("user", "somebody else's", "", false)] ((← Db.chatHistory db bob).map shapeOf)
   Db.chatClear db alice
   checkEq "clearing forgets one account's" 0 (← Db.chatHistory db alice).size
   checkEq "and leaves the other's" 1 (← Db.chatHistory db bob).size
