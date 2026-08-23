@@ -112,18 +112,7 @@ account is in the SES sandbox, verify the recipients too.
 
 Install the SAM CLI from the [first-party
 installer](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
-rather than from Homebrew, which is what [.devcontainer](.devcontainer/) does. The Homebrew
-formula builds against Homebrew's Python, whose `pyexpat` can be linked against a newer `libexpat`
-than macOS ships; the import that fails takes the `build` subcommand down with it, and what you see
-is `Error: No such command 'build'` rather than anything about the loader.
-
-Docker Desktop serves its socket from the user's home directory, and SAM looks for it in
-`/var/run`, so it reports no container runtime while `docker` itself works. Point it at the real
-one:
-
-```
-export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
-```
+rather than from Homebrew, which is what [.devcontainer](.devcontainer/) does.
 
 ```
 sam build
@@ -146,6 +135,18 @@ identity:
 ```
 aws bedrock-runtime converse --region <region> --model-id "<id>" \
   --messages '[{"role":"user","content":[{"text":"hello"}]}]'
+```
+**Troubleshooting**
+
+The Homebrew
+formula builds against Homebrew's Python, whose `pyexpat` can be linked against a newer `libexpat`
+than macOS ships; the import that fails takes the `build` subcommand down with it, and what you see
+is `Error: No such command 'build'` rather than anything about the loader.
+
+You may find that you need to set `DOCKER_HOST` if `sam` reports no container runtime:
+
+```
+export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
 ```
 
 ## Telemetry
