@@ -21,4 +21,5 @@ route_table Routes
     clearCompleted  := "/todos/clear-completed",
     signOut         := "/signout",
     chat            := "/chat",
-    chatStatus      := "/chat/status" ]
+    chatStatus      := "/chat/status",
+    mcp             := "/mcp" ]

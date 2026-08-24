@@ -12,7 +12,7 @@ public import Todo.Chat
 public section
 
 open Std.Async (Async)
-open Telemetry (SpanContext TelemetryT)
+open Telemetry (TelemetryT)
 
 namespace Todo.ChatTools
 
@@ -67,13 +67,6 @@ private def boolArg (input : Json) (name : String) : Option Bool :=
 private def missing (name : String) : Except String String :=
   .error s!"this call needs a `{name}` argument and did not have a usable one"
 
-/-- `IO` rather than the store's own `TelemetryT Async` because `LLMClient.ToolImpl` fixes the
-monad a tool runs in. The turn already runs on a thread of its own (see `Todo.ChatTurn`), so
-blocking that thread here costs nothing that is not already being waited on; `parent` is what
-keeps the spans the store opens underneath the turn's own rather than loose at the root. -/
-private def blocking {α : Type} (parent : Option SpanContext) (act : TelemetryT Async α) : IO α :=
-  Async.block (act.run parent)
-
 /-! ## The tools -/
 
 /-- One tool: what the model is offered, what running it does, and whether a call can leave the
@@ -89,7 +82,7 @@ also means nothing changed; `Todo.ChatTurn` counts mutations on that basis. -/
 structure Entry where
   tool : Tool
   mutates : Bool
-  run : Store → Account → Option SpanContext → Json → IO (Except String String)
+  run : Store → Account → Json → TelemetryT Async (Except String String)
 
 /-- The id in every schema below is the one `list_todos` reports, and the descriptions say so.
 A model that has not listed yet has no id it could have invented, which is what keeps it from
@@ -108,8 +101,8 @@ def listTodos : Entry where
               ("description", "Which todos to return. Defaults to all.") ]) ]
         [] }
   mutates := false
-  run store account parent input := do
-    let items ← blocking parent (store.list account (filterOf input))
+  run store account input := do
+    let items ← store.list account (filterOf input)
     pure (.ok (Json.compress (Json.arr (items.map itemJson))))
 
 def addTodo : Entry where
@@ -118,13 +111,13 @@ def addTodo : Entry where
       description := "Add a new todo. A title that is blank once trimmed adds nothing."
       schema := schema [("title", stringParam "The text of the new todo.")] ["title"] }
   mutates := true
-  run store account parent input := do
+  run store account input := do
     match stringArg input "title" with
     | none => pure (missing "title")
     | some raw =>
       match normalisedTitle raw with
       | none => pure (.error "that title is blank, so nothing was added")
-      | some title => blocking parent (store.add account title); pure (.ok s!"added \"{title}\"")
+      | some title => store.add account title; pure (.ok s!"added \"{title}\"")
 
 def editTodo : Entry where
   tool :=
@@ -137,12 +130,12 @@ def editTodo : Entry where
           ("title", stringParam "The replacement title.") ]
         ["id", "title"] }
   mutates := true
-  run store account parent input := do
+  run store account input := do
     match idArg input "id", stringArg input "title" with
     | none, _ => pure (missing "id")
     | _, none => pure (missing "title")
     | some id, some title =>
-      blocking parent (store.setTitle account id title)
+      store.setTitle account id title
       match normalisedTitle title with
       | none => pure (.ok s!"todo {id} had its title cleared, which deleted it")
       | some title => pure (.ok s!"todo {id} is now \"{title}\"")
@@ -154,10 +147,10 @@ def deleteTodo : Entry where
       schema := schema
         [("id", integerParam "The todo's id, as reported by list_todos.")] ["id"] }
   mutates := true
-  run store account parent input := do
+  run store account input := do
     match idArg input "id" with
     | none => pure (missing "id")
-    | some id => blocking parent (store.delete account id); pure (.ok s!"deleted todo {id}")
+    | some id => store.delete account id; pure (.ok s!"deleted todo {id}")
 
 /-- Absolute rather than a toggle, so that asking twice for the same thing leaves the same state.
 A toggle would make a retried or duplicated call undo the one before it. -/
@@ -172,12 +165,12 @@ def setDone : Entry where
              ("description", "True to complete it, false to reactivate it.")]) ]
         ["id", "done"] }
   mutates := true
-  run store account parent input := do
+  run store account input := do
     match idArg input "id", boolArg input "done" with
     | none, _ => pure (missing "id")
     | _, none => pure (missing "done")
     | some id, some done =>
-      blocking parent (store.setCompleted account id done)
+      store.setCompleted account id done
       pure (.ok (if done then s!"todo {id} is done" else s!"todo {id} is active again"))
 
 def registry : Array Entry := #[listTodos, addTodo, editTodo, deleteTodo, setDone]

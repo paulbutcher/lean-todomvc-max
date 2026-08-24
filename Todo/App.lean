@@ -15,6 +15,7 @@ public import Todo.Store
 public import Todo.Links
 public import Todo.Views
 public import Todo.ChatTurn
+public import Todo.Mcp
 
 public section
 
@@ -254,6 +255,34 @@ def chatResetHandler (assistant : Assistant) (account : Account) (req : Request 
     (assistant.turns.finish account : IO Unit)
   conversation assistant account parent
 
+/-! ## The endpoint an outside agent reaches -/
+
+/-- A refusal that names the scheme and nothing else. There is no authorization server to point
+a client at yet, so there is no `resource_metadata` to carry: a client that cannot present the
+credential has nothing here it could discover its way to. -/
+private def unauthorized : ContextAsync (Response Body.Any) := do
+  let response ← Response.withStatus .unauthorized |>.text "Unauthorized"
+  pure (withHeader response (Header.Name.mk "www-authenticate") "Bearer")
+
+/-- Every tool the panel's model has, offered to whatever agent the person brought.
+
+Unlike every route above, this one is reached with no session and no anti-forgery token: an
+agent holds a credential rather than a cookie, which is why `Todo.server` keeps it outside the
+middleware that requires one. The account is the settings', not the request's, until there is an
+authorization server to name one per token. -/
+def mcpHandler (store : Store) (settings : Option Mcp.Settings) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  let some settings := settings
+    | "Not Found" |> Response.notFound.text
+  let presented := (req.line.headers.getLast? (Header.Name.mk "authorization")).map toString
+  let some credential := Mcp.bearer? presented
+    | unauthorized
+  if !Mcp.presents settings credential then unauthorized else
+    let bytes ← MCP.StdHttp.collect req.body
+    let served ← (MCP.serve Mcp.config (Mcp.server store) settings.account
+      (MCP.StdHttp.requestOf req.line bytes)).run (parentSpan req)
+    MCP.StdHttp.responseOf served
+
 /-! ## The router -/
 
 /-- Everything below needs to know who is asking, so establishing it is the router's job rather
@@ -298,9 +327,16 @@ private def underAuth (req : Request Body.Stream) : Bool :=
   | "t" :: name :: _ => name == Todo.tenant.value
   | _ => false
 
-private def split (auth application : StatelessHandler) : StatelessHandler :=
+/-- The MCP endpoint is served beside the application for the reason the sign-in routes are: it
+answers requests that carry no session, and `antiForgery` refuses those. -/
+private def underMcp (req : Request Body.Stream) : Bool :=
+  req.line.uri.path.toDecodedSegments.toList == ["mcp"]
+
+private def split (auth mcp application : StatelessHandler) : StatelessHandler :=
   { onRequest := fun req =>
-      if underAuth req then auth.onRequest req else application.onRequest req }
+      if underAuth req then auth.onRequest req
+      else if underMcp req then mcp.onRequest req
+      else application.onRequest req }
 
 /-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
 `Middleware.apply`'s documented order.
@@ -313,7 +349,12 @@ session cookie `secure` and sends `hsts`. Claiming it falsely is the damaging di
 `sslRedirect` is absent whichever way `https` goes, because neither deployment has a plaintext
 listener to redirect a caller away from. -/
 def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (store : Store)
-    (assistant : Assistant) (sessions : σ) (https : Bool := false) : StatelessHandler :=
+    (assistant : Assistant) (sessions : σ) (https : Bool := false)
+    (mcpSettings : Option Mcp.Settings := none) : StatelessHandler :=
+  let mcp := toHandler
+    [ .post patterns.mcp (mcpHandler store mcpSettings),
+      .get patterns.mcp (mcpHandler store mcpSettings),
+      .delete patterns.mcp (mcpHandler store mcpSettings) ]
   Middleware.apply
     ([forwardedScheme, forwardedRemoteAddr]
       ++ (if https then [hsts] else [])
@@ -330,6 +371,6 @@ def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (st
           defaultCharset,
           notModified,
           file "public"])
-    (split auth (Middleware.apply [antiForgery] (app identity store assistant)))
+    (split auth mcp (Middleware.apply [antiForgery] (app identity store assistant)))
 
 end Todo

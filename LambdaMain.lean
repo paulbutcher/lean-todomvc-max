@@ -168,4 +168,4 @@ def main : IO Unit := AwsLambda.serve do
   -- A function URL is reachable over https only, so TLS termination is a given here.
   pure (AwsLambda.Http.handler
     (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions
-      (https := true)))
+      (https := true) (mcpSettings := ← Todo.Mcp.settingsFromEnv)))

@@ -99,6 +99,20 @@ export AWS_REGION=<region>
 export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
+An agent of your own can reach the same tools over
+[MCP](https://modelcontextprotocol.io) at `/mcp`, rather than through the panel. Setting both of
+these turns the endpoint on; leaving either unset means there is no endpoint at all:
+
+```
+export MCP_TOKEN=<any-secret>
+export MCP_ACCOUNT=<account-id-whose-list-it-is>
+```
+
+Every request must carry `Authorization: Bearer $MCP_TOKEN`, and every one of them acts as
+`MCP_ACCOUNT`. That is a single credential for a single list, which is enough to point a client
+at while the OAuth flow that issues one per person is being built, and not enough for anything
+else. The endpoint is not part of the deployment in [template.yaml](template.yaml).
+
 ## Deploying
 
 [template.yaml](template.yaml) defines an AWS [SAM](https://aws.amazon.com/serverless/sam/)

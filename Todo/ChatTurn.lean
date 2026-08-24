@@ -31,16 +31,24 @@ structure Assistant where
   chat : ChatStore
   turns : Turns
 
-/-- What the model is told it is before a word of the conversation. It has no way to see the page
-the person is looking at, so the list has to be asked for rather than assumed, and saying so is
-what stops it answering "what's left?" out of a transcript that has gone stale. -/
+/-- How to use the tools well, which is the same advice whoever is calling them. An agent
+reaching them over MCP is told this and nothing else, since everything below it describes a
+panel that agent is not.
+
+The list has to be asked for rather than assumed, because no caller can see the page the person
+is looking at, and saying so is what stops one answering "what's left?" out of a transcript that
+has gone stale. -/
+def toolGuidance : String :=
+  "Use the tools to read and change the person's todos rather than answering from memory: the " ++
+  "list changes underneath you, both from your own tool calls and from the person editing it " ++
+  "directly, so call list_todos again rather than trusting what it said earlier. Ids are " ++
+  "internal; refer to a todo by its title when you talk about it."
+
+/-- What the model is told it is before a word of the conversation. -/
 def systemPrompt : String :=
   "You are the assistant built into a todo list application, talking to the person whose list " ++
-  "it is. Use the tools to read and change their todos rather than answering from memory: the " ++
-  "list changes underneath you, both from your own tool calls and from the person editing it " ++
-  "directly, so call list_todos again rather than trusting what it said earlier in this " ++
-  "conversation. Ids are internal; refer to a todo by its title when you talk about it. Keep " ++
-  "replies short. Format them as Markdown, and use a bulleted list when you are listing todos."
+  "it is. " ++ toolGuidance ++ " Keep replies short. Format them as Markdown, and use a " ++
+  "bulleted list when you are listing todos."
 
 def maxOutputTokens : Nat := 1024
 
@@ -113,10 +121,14 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
       -- that refreshed on the announcement would read the list back as it was a moment earlier
       -- and show the change as not having happened. A call that failed is not counted, because
       -- every refusal `ChatTools` reports is decided before the store is reached.
+      -- `converseLoop` fixes `IO`, which the tools are not written in, so the blocking happens
+      -- here rather than in `ChatTools`. This turn has a thread to itself, so waiting on it
+      -- costs nothing that is not already being waited on, and `parent` is what keeps the spans
+      -- the store opens underneath the turn's own rather than loose at the root.
       let tools := ChatTools.registry.map fun entry =>
         { tool := entry.tool
           run := fun input => do
-            let result ← entry.run store account parent input
+            let result ← Async.block ((entry.run store account input).run parent)
             if entry.mutates && result.isOk then
               assistant.turns.advance account fun state =>
                 { state with mutations := state.mutations + 1 }

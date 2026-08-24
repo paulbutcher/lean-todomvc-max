@@ -11,6 +11,7 @@ public import TodoTests.Auth
 public import TodoTests.AuthMail
 public import TodoTests.Db
 public import TodoTests.Logs
+public import TodoTests.Mcp
 public import TodoTests.Store
 public import TodoTests.Tracing
 public import TodoTests.Views
@@ -26,6 +27,7 @@ def runAll : IO Unit := do
   runAuthTests
   runAuthMailTests
   runChatTests
+  runMcpTests
   runTracingTests
   runLogsTests
   runDbTests

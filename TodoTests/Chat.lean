@@ -46,7 +46,7 @@ private def runTool (store : Store) (name : String) (input : List (String × Jso
     (account : Account := alice) : IO (Except String String) := do
   let some entry := ChatTools.registry.find? (·.tool.name == name)
     | throw (IO.userError s!"there is no tool called {name}")
-  entry.run store account none (Json.mkObj input)
+  Async.block (runTelemetry (entry.run store account (Json.mkObj input)))
 
 private def titlesOf (store : Store) (account : Account := alice) :
     IO (Array (String × Bool)) := do
