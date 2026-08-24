@@ -7,6 +7,8 @@ module
 
 public import Html
 public import Htmx
+public import Crypto.Sha256
+public import Codec.Hex
 public import Todo.Store
 public import Todo.Links
 public import Todo.ChatViews
@@ -83,10 +85,46 @@ def itemEditView (item : Item) : Node .listItem :=
         [("autofocus", "autofocus")] ]
     { id := itemId, class_ := "editing" }
 
+/-! ## Noticing that the list has changed underneath the page -/
+
+/-- Everything the list and its footer are drawn from, so that two lists differing anywhere the
+person can see differ here. Both are functions of the account's whole list; which of them the
+filter admits is settled from the same data.
+
+A digest rather than a revision column because it needs no schema and no shared state: the
+deployed function freezes between invocations and runs as several instances, so a counter held
+anywhere but the rows themselves would be wrong on at least one of them. -/
+def listDigest (allItems : Array Item) : String :=
+  let canonical := allItems.foldl (init := "") fun acc item =>
+    acc ++ s!"{item.id}\x1f{item.completed}\x1f{item.title}\x1e"
+  Codec.Hex.encodeString (Crypto.Sha256.hashUtf8 canonical)
+
+/-- How often the page asks whether the list still matches what it is showing.
+
+Short polls rather than one held open: a held request keeps an invocation of the deployed function
+alive for its whole duration, and unlike the assistant's poll there is no work going on underneath
+that the invocation is needed for. -/
+def watchInterval : String := "5s"
+
+/-- What asks. It carries the digest of the list it was drawn beside, so the answer is a swap
+only when the two have parted company.
+
+It sits inside the section rather than beside it so that every path that redraws the list redraws
+this too: a watcher left holding a stale digest would swap the list on its next poll for no
+reason, and an unprompted swap discards a todo somebody is part-way through editing. -/
+def listWatcher (digest : String) : Node .flow :=
+  Htmx.div []
+    { id := "todo-watch",
+      hxGet := s!"{links.todosStatus}?seen={digest}",
+      hxTrigger := s!"every {watchInterval}",
+      -- The answer is either nothing at all or an out-of-band swap, neither of which belongs
+      -- anywhere this element is.
+      hxSwap := some .none }
+
 /-- `oob` marks this as an out-of-band swap, for a response the browser is not aiming at the list:
 the assistant's poll answers into the chat panel, and grafts the list on beside it. Every other
 caller is answering a request that targeted the list, where saying so again would be redundant. -/
-def listSection (items : Array Item) (oob : Bool := false) : Node .flow :=
+def listSection (items : Array Item) (digest : String) (oob : Bool := false) : Node .flow :=
   let allCompleted := items.size > 0 && items.all (·.completed)
   Htmx.section_
     [ Htmx.input
@@ -94,7 +132,8 @@ def listSection (items : Array Item) (oob : Bool := false) : Node .flow :=
           class_ := "toggle-all", hxPost := links.toggleAll,
           hxTarget := "#todo-list-section", hxSwap := some .outerHTML },
       label [] { for_ := "toggle-all" },
-      ul (items.toList.map itemView) { class_ := "todo-list" } ]
+      ul (items.toList.map itemView) { class_ := "todo-list" },
+      listWatcher digest ]
     { id := "todo-list-section", class_ := "main",
       hxSwapOob := if oob then some "true" else none }
 
@@ -121,12 +160,14 @@ def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
     { id := "todo-footer", class_ := "footer", hxSwapOob := "true" }
 
 def mutationFragment (items allItems : Array Item) (filter : Filter) : String :=
-  Node.render (listSection items) ++ Node.render (footerFragment allItems filter)
+  Node.render (listSection items (listDigest allItems))
+    ++ Node.render (footerFragment allItems filter)
 
 /-- The same two fragments, for a response aimed somewhere else entirely. The footer already
 swaps out of band wherever it appears, since it is never what a request targets. -/
 def listRefreshFragment (items allItems : Array Item) (filter : Filter) : String :=
-  Node.render (listSection items (oob := true)) ++ Node.render (footerFragment allItems filter)
+  Node.render (listSection items (listDigest allItems) (oob := true))
+    ++ Node.render (footerFragment allItems filter)
 
 /-- The address is what makes the session visible; the account id it hangs off says nothing to
 the person holding it. `none` only where the account has gone between being identified and being
@@ -174,7 +215,7 @@ def pageView (csrfToken : Option String) (address : Option String)
                           hxSwap := some .outerHTML,
                           hxOnHtmx := [("after-request", "this.reset()")] } ]
                     { class_ := "header" },
-                  listSection items,
+                  listSection items (listDigest allItems),
                   footerFragment allItems filter ]
                 { class_ := "todoapp" } ] ]
         (rawAttrs := csrfAttrs csrfToken) ]

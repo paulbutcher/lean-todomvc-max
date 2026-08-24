@@ -18,6 +18,7 @@ open Std.Async (Async)
 open Std.Http.Internal.Test
 open Std Http Server
 open Telemetry (runTelemetry)
+open Routes
 
 /-! ## The endpoint an outside agent reaches
 
@@ -138,11 +139,59 @@ private def testCallsReachTheStoreAsTheConfiguredAccount : IO Unit := do
   checkEq "the todo is alice's" #["gamma"] (← titlesOf store)
   checkEq "and nobody else's" #[] (← titlesOf store bob)
 
+/-! ## The list on the page catching up -/
+
+private def watch (digest : String) : String :=
+  mkGetClose s!"{links.todosStatus}?seen={digest}"
+
+/-- The digest has to move for every change the person can see, or the page silently stops
+catching up. Each of these is a different field of the row, and a canonicalisation that dropped
+one of them would leave that change invisible. -/
+private def testTheDigestFollowsEveryVisibleChange : IO Unit := do
+  let one : Item := { id := 1, title := "alpha", completed := false }
+  let digest := listDigest #[one]
+  checkEq "the same list digests the same" digest (listDigest #[one])
+  checkEq "a retitle moves it" false (digest == listDigest #[{ one with title := "beta" }])
+  checkEq "so does completing it" false (digest == listDigest #[{ one with completed := true }])
+  checkEq "so does another todo" false (digest == listDigest #[one, { one with id := 2 }])
+  checkEq "so does deleting it" false (digest == listDigest #[])
+
+/-- A poll drawn against the list the store still holds is answered with nothing, so the page is
+left alone. This is what makes the poll safe to run every few seconds: a swap would discard a
+todo somebody is part-way through editing. -/
+private def testAPollThatIsUpToDateChangesNothing : IO Unit := do
+  let store ← memoryStore alice #[{ id := 1, title := "alpha", completed := false }]
+  let handler ← siteOf store
+  let current ← Async.block (runTelemetry (store.list alice .all))
+  check "a poll holding the current digest" (watch (listDigest current)) handler
+    fun response => do
+      assertStatus response "HTTP/1.1 200"
+      assertAbsent response "todo-list-section"
+
+/-- The whole point: a change the browser did not make reaches the page it is not showing on.
+
+The todo arrives through the MCP endpoint, which is as far from the browser as a change gets, and
+the poll that follows carries the digest the page was drawn against before it. -/
+private def testAChangeMadeElsewhereReachesThePage : IO Unit := do
+  let store ← memoryStore alice #[]
+  let handler ← siteOf store
+  let before ← Async.block (runTelemetry (store.list alice .all))
+  check "an agent adds one" (call (callTool "add_todo" [("title", "gamma")])) handler
+    fun response => assertStatus response "HTTP/1.1 200"
+  check "the poll the page had already sent" (watch (listDigest before)) handler
+    fun response => do
+      assertContains response "gamma"
+      -- Out of band, because the poll is answering an element that is not the list.
+      assertContains response "hx-swap-oob"
+
 def runMcpTests : IO Unit := do
   testTheAccountIsNamedByItsAddress
   testTheCredentialIsRequired
   testItIsAbsentUntilConfigured
   testTheToolsAreTheRegistrys
   testCallsReachTheStoreAsTheConfiguredAccount
+  testTheDigestFollowsEveryVisibleChange
+  testAPollThatIsUpToDateChangesNothing
+  testAChangeMadeElsewhereReachesThePage
 
 end TodoTests

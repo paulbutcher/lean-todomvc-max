@@ -22,4 +22,5 @@ route_table Routes
     signOut         := "/signout",
     chat            := "/chat",
     chatStatus      := "/chat/status",
+    todosStatus     := "/todos/status",
     mcp             := "/mcp" ]

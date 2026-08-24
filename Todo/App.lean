@@ -149,6 +149,32 @@ def clearCompletedHandler (store : Store) (account : Account) (req : Request Bod
   (store.clearCompleted account).run (parentSpan req)
   renderMutation store account req
 
+/-- The digest the fragment that sent this poll was drawn against. Missing or unreadable matches
+no list, which costs a redundant refresh rather than a missed one. -/
+def seenDigest (req : Request Body.Stream) : String :=
+  (((req.extensions.get Params).bind (·.get "seen"))).getD ""
+
+/-- Answers the page's standing question of whether the list it is showing is still the list the
+store holds, and says nothing at all when it is.
+
+This is what makes a change the browser did not make visible: an agent reaching the tools over
+MCP, the assistant panel in another tab, or the same account on a phone. Nothing else asks, since
+the assistant's own poll runs only while a turn is in flight.
+
+Answering with the list only when the digest has moved is not an optimisation. An unprompted swap
+discards a todo somebody is part-way through editing inline, so a poll that refreshed on every
+tick would make inline editing impossible to finish. -/
+def listStatusHandler (store : Store) (account : Account) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  let parent := parentSpan req
+  let allItems ← (store.list account .all).run parent
+  if listDigest allItems == seenDigest req then
+    "" |> Response.ok.html
+  else
+    let filter := currentFilter req
+    let items ← (store.list account filter).run parent
+    listRefreshFragment items allItems filter |> Response.ok.html
+
 /-- Ends this browser's session and clears the cookie carrying it. Clearing without revoking
 would leave a credential that still works in the hands of whoever recovers the cookie, and
 revoking without clearing would send it on every request until it expired. -/
@@ -303,6 +329,7 @@ def app (identity : Identity) (store : Store) (assistant : Assistant) : Stateles
     .get patterns.active (guarded identity (pageHandler .active store assistant identity)),
     .get patterns.completed (guarded identity (pageHandler .completed store assistant identity)),
     .post patterns.todos (guarded identity (addHandler store)),
+    .get patterns.todosStatus (guarded identity (listStatusHandler store)),
     .get patterns.edit (byId editHandler),
     .put patterns.todo (byId saveHandler),
     .post patterns.toggle (byId toggleHandler),

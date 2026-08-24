@@ -18,6 +18,7 @@ open Html (Node)
 open Std.Async (Async)
 open Std.Http.Internal.Test
 open Telemetry (runTelemetry)
+open Routes
 open LLMClient (Msg ToolCall)
 
 theorem toolCallOfJson_toolCallJson (call : ToolCall) :
@@ -250,10 +251,10 @@ private def testAFinishedTurnStopsThePolling : IO Unit := do
   let handler ← panelOf assistant store
   whileHeld gate do
     check "a prompt" (sendPrompt "prompt=anything") handler fun response =>
-      assertContains response "hx-trigger"
+      assertContains response links.chatStatus
   check "GET /chat/status" (mkGetClose "/chat/status") handler fun response => do
     assertContains response "All done."
-    assertAbsent response "hx-trigger"
+    assertAbsent response links.chatStatus
 
 /-- A turn that never got an answer says so, once. The failure is not in the transcript (nothing
 was said to record), so it lives until a poll reads it; a poll that left it there would report the
@@ -267,7 +268,7 @@ private def testAFailedTurnIsReportedOnce : IO Unit := do
   awaitTurn assistant.turns alice "the failing turn"
   check "the poll that reads the failure" (mkGetClose "/chat/status") handler fun response => do
     assertContains response "went wrong"
-    assertAbsent response "hx-trigger"
+    assertAbsent response links.chatStatus
   check "the next one" (mkGetClose "/chat/status") handler fun response =>
     assertAbsent response "went wrong"
 
