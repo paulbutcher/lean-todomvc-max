@@ -73,12 +73,15 @@ database standing behind the sign-in flow. -/
 def fixedIdentity (account : Account) (revocations : IO.Ref Nat) : Auth.Identity where
   of := fun _ => pure (some account)
   address := fun _ => pure (some s!"{account.value}@example.com")
+  accountFor := fun raw =>
+    pure (if raw == s!"{account.value}@example.com" then some account else none)
   signOut := fun _ _ => revocations.modify (· + 1)
 
 /-- Nobody is signed in, which is what every request arrives as before it has been. -/
 def anonymousIdentity : Auth.Identity where
   of := fun _ => pure none
   address := fun _ => pure none
+  accountFor := fun _ => pure none
   signOut := fun _ _ => pure ()
 
 /-! ## The assistant -/

@@ -64,6 +64,34 @@ private def titlesOf (store : Store) (account : Account := alice) : IO (Array St
   let items ← Async.block (runTelemetry (store.list account .all))
   pure (items.map (·.title))
 
+/-! ## What the deployment configured -/
+
+private def resolving : String → IO (Option Account) := fun raw =>
+  pure (if raw == "alice@example.com" then some alice else none)
+
+private def described : Mcp.Configuration → String
+  | .off => "off"
+  | .on settings => s!"on as {settings.account.value}"
+  | .misconfigured _ => "misconfigured"
+
+/-- The account is named by the address it signs in with, because that is what somebody setting
+this has to hand. An address belonging to nobody is a mistake and says so: the endpoint it would
+otherwise produce answers every question with an empty list, which looks like an empty list
+rather than like a misconfiguration. -/
+private def testTheAccountIsNamedByItsAddress : IO Unit := do
+  let settingsFor := Mcp.settingsFor resolving
+  checkEq "an address that signs in resolves to its account" "on as alice"
+    (described (← settingsFor (some token) (some "alice@example.com")))
+  checkEq "one that belongs to nobody is a mistake, not an empty list" "misconfigured"
+    (described (← settingsFor (some token) (some "nobody@example.com")))
+  checkEq "and so is an account id, which is not an address" "misconfigured"
+    (described (← settingsFor (some token) (some alice.value)))
+  checkEq "half the settings is a mistake too" "misconfigured"
+    (described (← settingsFor (some token) none))
+  checkEq "neither is simply off" "off" (described (← settingsFor none none))
+
+/-! ## The endpoint -/
+
 /-- Without the credential nothing runs, and the refusal names the scheme so a client knows what
 would have been accepted. A wrong credential is refused the same way as none at all. -/
 private def testTheCredentialIsRequired : IO Unit := do
@@ -111,6 +139,7 @@ private def testCallsReachTheStoreAsTheConfiguredAccount : IO Unit := do
   checkEq "and nobody else's" #[] (← titlesOf store bob)
 
 def runMcpTests : IO Unit := do
+  testTheAccountIsNamedByItsAddress
   testTheCredentialIsRequired
   testItIsAbsentUntilConfigured
   testTheToolsAreTheRegistrys

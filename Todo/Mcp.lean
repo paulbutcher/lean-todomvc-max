@@ -26,14 +26,41 @@ structure Settings where
   token : String
   account : Account
 
-/-- `none` disables the endpoint outright rather than leaving it answering every request with a
-refusal, because a deployment that set neither variable did not ask for one. -/
-def settingsFromEnv : IO (Option Settings) := do
-  let token := (← IO.getEnv "MCP_TOKEN").filter (!·.isEmpty)
-  let account := (← IO.getEnv "MCP_ACCOUNT").filter (!·.isEmpty)
-  match token, account with
-  | some token, some account => pure (some { token, account := ⟨account⟩ })
-  | _, _ => pure none
+/-- What a deployment's settings came to.
+
+`off` and `misconfigured` both leave the endpoint absent, and they are told apart because only
+one of them is a mistake. Silently treating the second as the first is what leaves somebody
+looking at an endpoint that answers every question with an empty list. -/
+inductive Configuration where
+  | off
+  | on (settings : Settings)
+  | misconfigured (reason : String)
+
+/-- The address is what the person setting this knows; an account id is a string they could only
+get by reading it out of the database. An address that no account signs in with is a mistake
+rather than a way of switching the endpoint off. -/
+def settingsFor (accountFor : String → IO (Option Account)) (token address : Option String) :
+    IO Configuration := do
+  match token, address with
+  | some token, some address =>
+    match ← accountFor address with
+    | some account => pure (.on { token, account })
+    | none => pure (.misconfigured s!"MCP_ACCOUNT is {address}, which no account signs in with")
+  | some _, none => pure (.misconfigured "MCP_TOKEN is set but MCP_ACCOUNT is not")
+  | none, some _ => pure (.misconfigured "MCP_ACCOUNT is set but MCP_TOKEN is not")
+  | none, none => pure .off
+
+/-- A mistake is reported where whoever made it will see it, which for both deployments is the
+log. Neither is a reason to refuse to start: the endpoint is not the application. -/
+def settingsFromEnv (accountFor : String → IO (Option Account)) : IO (Option Settings) := do
+  let env (name : String) : IO (Option String) := do
+    pure ((← IO.getEnv name).filter (!·.isEmpty))
+  match ← settingsFor accountFor (← env "MCP_TOKEN") (← env "MCP_ACCOUNT") with
+  | .on settings => pure (some settings)
+  | .off => pure none
+  | .misconfigured reason =>
+    IO.eprintln s!"{reason}. The MCP endpoint is off."
+    pure none
 
 /-- The credential a request presents, if it presents one in the only form MCP allows. -/
 def bearer? (header : Option String) : Option String :=

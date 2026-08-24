@@ -105,7 +105,7 @@ these turns the endpoint on; leaving either unset means there is no endpoint at 
 
 ```
 export MCP_TOKEN=<any-secret>
-export MCP_ACCOUNT=<account-id-whose-list-it-is>
+export MCP_ACCOUNT=<the-email-address-you-sign-in-with>
 ```
 
 Every request must carry `Authorization: Bearer $MCP_TOKEN`, and every one of them acts as

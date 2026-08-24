@@ -141,6 +141,18 @@ private def identify (s : Site) (req : Request Body.Stream) : IO (Option Todo.Ac
 private def addressOf (s : Site) (account : Todo.Account) : IO (Option String) := do
   pure ((← s.ports.store.accountById Todo.tenant account).map (·.primaryEmail.render))
 
+/-- The account that signs in with `raw`, if one does. The inverse of `addressOf`, and the way in
+for anything configured by a person: an address is what they know, and an account id is a string
+they would have to go looking in a database for.
+
+An address that does not parse is one no account can have, so it is answered the same way as one
+that parses and belongs to nobody. -/
+private def accountFor (s : Site) (raw : String) : IO (Option Todo.Account) := do
+  match EmailAddress.parse raw with
+  | .error _ => pure none
+  | .ok address =>
+    pure ((← s.ports.store.accountByIdentity Todo.tenant address.normalise).map (·.id))
+
 /-- Ends the session the request arrived on, and only that one: signing out of a browser is not a
 statement about any other browser the account is signed in on. -/
 private def signOut (s : Site) (req : Request Body.Stream) (account : Todo.Account) : IO Unit := do
@@ -157,11 +169,13 @@ Each is `IO` because that is what the library ports are. -/
 structure Identity where
   of : Request Body.Stream → IO (Option Todo.Account)
   address : Todo.Account → IO (Option String)
+  accountFor : String → IO (Option Todo.Account)
   signOut : Request Body.Stream → Todo.Account → IO Unit
 
 def Site.identity (s : Site) : Identity where
   of := identify s
   address := addressOf s
+  accountFor := accountFor s
   signOut := signOut s
 
 /-- Rebuilds the transport from `fresh` for every send.
