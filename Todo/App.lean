@@ -32,14 +32,11 @@ open Auth (Identity)
 
 /-! ## Responses that send the browser somewhere -/
 
-private def headerValue (text : String) : Header.Value :=
-  (Header.Value.ofString? text).getD default
-
 private def withHeader (response : Response Body.Any) (name : Header.Name) (value : String) :
     Response Body.Any :=
   { response with
     line := { response.line with
-      headers := response.line.headers.insert name (headerValue value) } }
+      headers := response.line.headers.insert name (Header.Value.ofStringSanitized value) } }
 
 /-- Where a request with no session is sent. A path the tenant does not allow back to becomes its
 default, so naming the current one costs nothing and returns whoever was reading a filtered list
