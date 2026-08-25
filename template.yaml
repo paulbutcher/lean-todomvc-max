@@ -207,21 +207,27 @@ Resources:
       AllocatedStorage: 20
       StorageEncrypted: true
       KmsKeyId: !Ref DatabaseKey
-      # Not `ManageMasterUserPassword`, which would have RDS generate the password and rotate it
-      # every seven days. The function reaches the database through `PGPASSWORD`, and a dynamic
-      # reference in a function's environment is resolved once, when the stack is updated: it is
-      # a copy of the secret rather than a view of it. A rotating password behind a copy works
-      # until the first rotation and then fails every connection, which is a week after any
-      # deployment and nowhere near it.
+      # Not `ManageMasterUserPassword`, which would have RDS generate this and rotate it every
+      # seven days.
       #
-      # So this one does not rotate, and says so. It never leaves a VPC with no egress, and the
-      # two secrets below are held on the same terms for the same reason.
+      # The function reaches the database through `PGPASSWORD`, and a dynamic reference in a
+      # function's environment is resolved when the stack is updated and the result written into
+      # the function's configuration. It is a copy of the secret rather than a view of it, and
+      # nothing refreshes the copy when the secret changes. A rotating password behind one works
+      # until the first rotation and then fails every connection, a week after a deployment and
+      # nowhere near it, with `password authentication failed` and nothing to say why.
+      #
+      # So the password is held here and does not rotate. It never leaves a VPC with no egress,
+      # and the two secrets below are held on the same terms for the same reason. Rotating it
+      # would mean the function reading it at runtime, which this VPC would need an endpoint for.
       ManageMasterUserPassword: false
       MasterUsername: postgres
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabasePassword}:SecretString}}"
       VPCSecurityGroups: [!Ref SecurityGroup]
       DBSubnetGroupName: !Ref DBSubnetGroup
 
+  # What the database above authenticates and the function below presents.
+  #
   # RDS restricts what a master password may contain, so punctuation is excluded rather than
   # picked through: 64 characters of letters and digits is far more than the entropy any of this
   # rests on, and none of the excluded characters is load bearing.
