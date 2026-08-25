@@ -124,11 +124,10 @@ A token reaches only the tools its scopes name, and only your list. An agent hol
 token is not shown the tools it cannot use, so it plans around what it has rather than being
 turned away mid-task.
 
-Two things to know. Client identifiers that are URLs
+One thing to know. Client identifiers that are URLs
 ([CIMD](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)) are
 refused, because nothing here fetches them; agents that register dynamically are unaffected, and
-most do. And after signing in you land on your todo list rather than back on the consent page, so
-the agent has to ask again; that is a limitation of the sign-in library rather than of this.
+most do.
 
 ## Deploying
 
