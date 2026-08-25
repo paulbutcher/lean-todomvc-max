@@ -207,11 +207,31 @@ Resources:
       AllocatedStorage: 20
       StorageEncrypted: true
       KmsKeyId: !Ref DatabaseKey
-      # RDS generates the password and keeps it in a Secrets Manager secret of its own.
-      ManageMasterUserPassword: true
+      # Not `ManageMasterUserPassword`, which would have RDS generate the password and rotate it
+      # every seven days. The function reaches the database through `PGPASSWORD`, and a dynamic
+      # reference in a function's environment is resolved once, when the stack is updated: it is
+      # a copy of the secret rather than a view of it. A rotating password behind a copy works
+      # until the first rotation and then fails every connection, which is a week after any
+      # deployment and nowhere near it.
+      #
+      # So this one does not rotate, and says so. It never leaves a VPC with no egress, and the
+      # two secrets below are held on the same terms for the same reason.
+      ManageMasterUserPassword: false
       MasterUsername: postgres
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabasePassword}:SecretString}}"
       VPCSecurityGroups: [!Ref SecurityGroup]
       DBSubnetGroupName: !Ref DBSubnetGroup
+
+  # RDS restricts what a master password may contain, so punctuation is excluded rather than
+  # picked through: 64 characters of letters and digits is far more than the entropy any of this
+  # rests on, and none of the excluded characters is load bearing.
+  DatabasePassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Database master password for ${AWS::StackName}"
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: true
 
   # Sessions are sealed rather than stored, so the key has to outlive any one execution
   # environment and be identical across all of them.
@@ -300,7 +320,7 @@ Resources:
           PGPORT: !Sub "${Database.Endpoint.Port}"
           PGDATABASE: todomvc
           PGUSER: postgres
-          PGPASSWORD: !Sub "{{resolve:secretsmanager:${Database.MasterUserSecret.SecretArn}:SecretString:password}}"
+          PGPASSWORD: !Sub "{{resolve:secretsmanager:${DatabasePassword}:SecretString}}"
           # libpq defaults to `prefer`, which falls back to an unencrypted connection without
           # complaint. `verify-full` would additionally need the RDS CA bundle in the image.
           PGSSLMODE: require
