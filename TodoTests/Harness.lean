@@ -22,6 +22,10 @@ def checkEq [BEq α] [Repr α] (label : String) (expected actual : α) : IO Unit
 def alice : Account := ⟨"alice"⟩
 def bob : Account := ⟨"bob"⟩
 
+/-- Whether a rendered page says something, for the tests that read one directly rather than
+through a response. -/
+def mentions (haystack needle : String) : Bool := (haystack.splitOn needle).length > 1
+
 /-- A `Store` the handler tests can drive directly. What the queries in `Todo.Db` do with the
 same operations is settled against a real database in `TodoTests.runDbTests`; here the point is
 only to give the handlers something to read and write.
@@ -73,15 +77,12 @@ database standing behind the sign-in flow. -/
 def fixedIdentity (account : Account) (revocations : IO.Ref Nat) : Auth.Identity where
   of := fun _ => pure (some account)
   address := fun _ => pure (some s!"{account.value}@example.com")
-  accountFor := fun raw =>
-    pure (if raw == s!"{account.value}@example.com" then some account else none)
   signOut := fun _ _ => revocations.modify (· + 1)
 
 /-- Nobody is signed in, which is what every request arrives as before it has been. -/
 def anonymousIdentity : Auth.Identity where
   of := fun _ => pure none
   address := fun _ => pure none
-  accountFor := fun _ => pure none
   signOut := fun _ _ => pure ()
 
 /-! ## The assistant -/
@@ -99,6 +100,44 @@ def memoryChatStore : IO ChatStore := do
     clear := fun account =>
       messages.modify (·.filter fun (holder, _) => holder != account.value)
   }
+
+/-! ## The authorization server -/
+
+/-- An origin for the tests that read one back out of a document or a challenge. `https` because
+that is what every deployment of this is, and what the metadata documents have to say. -/
+def testBase : Authentication.BaseUrl := ⟨"https://todos.example"⟩
+
+/-- An authorization server that recognises exactly the tokens it is handed and nothing else.
+
+Scripted rather than real because what these tests are about is this application's use of a
+token: which tools its scopes reach, whose list they reach, and what a request carrying none is
+told. Issuing one is the library's, and it has theorems about that.
+
+`base` is what the two metadata documents and the challenge are built from, so those come out as
+the real ones do; a test reading either is reading what a deployment would serve. -/
+def scriptedAuthorization (base : Authentication.BaseUrl)
+    (issued : List (String × Account × List Authorization.Scope) := [])
+    (prompt : Option Authorization.Prompt := none) : Authorization.Site :=
+  { Authorization.describing base with
+    authorize := fun _ _ =>
+      pure (match prompt with
+            | some prompt => .consent prompt
+            | none => .refuse { error := .invalidClient, description := "no clients here" })
+    conclude := fun _ => pure (.respond ⟨"https://client.example/callback?code=granted"⟩)
+    token := fun _ => pure (.error { error := .invalidGrant, description := "no grants here" })
+    register := fun _ => pure (401, Json.mkObj [("error", .str "invalid_client")])
+    verify := fun presented =>
+      pure (match issued.find? (·.1 == presented) with
+            | some (_, account, scopes) =>
+              .ok { account, client := ⟨"scripted"⟩, grant := ⟨"scripted"⟩,
+                    resource := Authorization.resource base, scopes,
+                    expiresAt := ⟨Int.ofNat 4102444800⟩ }
+            | none => .error .unknown) }
+
+/-- An authorization server nobody holds a token for, for the routes that have nothing to do with
+one. Every request it sees is refused exactly as a real one refuses a client it has never heard
+of, so a test that reaches these endpoints by accident sees a refusal rather than a stub. -/
+def noGrants : Authorization.Site := scriptedAuthorization testBase
 
 /-- A provider that answers from a script instead of a model, one reply per request, and refuses
 once the script runs out rather than repeating its last line.

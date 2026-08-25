@@ -39,6 +39,16 @@ private def withHeader (response : Response Body.Any) (name : Header.Name) (valu
     line := { response.line with
       headers := response.line.headers.insert name (Header.Value.ofStringSanitized value) } }
 
+/-- The request as it was addressed, parameters included. Whether the parameters matter depends
+on what they are for: a page keeps none, and an authorization request is nothing without them, so
+carrying them is what lets one survive a detour through signing in. The allowlist is matched
+against the path alone, so nothing here can widen what a `returnTo` may name. -/
+def target (req : Request Body.Stream) : String :=
+  let path := toString req.line.uri.path
+  match (req.extensions.get Params).map (·.query) with
+  | some query => if query.isEmpty then path else path ++ "?" ++ query.toRawString
+  | none => path
+
 /-- Where a request with no session is sent. A path the tenant does not allow back to becomes its
 default, so naming the current one costs nothing and returns whoever was reading a filtered list
 to that list.
@@ -46,7 +56,10 @@ to that list.
 HTMX follows a redirect itself and swaps whatever it finds into the target element, which would
 put the sign-in page inside the todo list. A request it made is told to navigate instead. -/
 private def toSignIn (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  let target := signInPath ++ "?returnTo=" ++ toString req.line.uri.path
+  -- Encoded rather than concatenated: an authorization request has parameters of its own, and
+  -- pasted in raw the first `&` of them would end the `returnTo` and start a parameter of the
+  -- sign-in route's.
+  let target := signInPath ++ "?" ++ (URI.Query.empty.insert "returnTo" (target req)).toRawString
   if (req.line.headers.get? (Header.Name.mk "hx-request")).isSome then
     pure (withHeader (← Response.ok.html "") (Header.Name.mk "hx-redirect") target)
   else
@@ -281,31 +294,144 @@ def chatResetHandler (assistant : Assistant) (account : Account) (req : Request 
     (assistant.turns.finish account : IO Unit)
   conversation assistant account parent
 
+/-! ## The authorization server
+
+Everything below answers a client rather than a person, except the authorization endpoint, which
+is where the two meet. -/
+
+/-- `Status` from the code the library names, which is the whole of what it says about how a
+failure is reported. -/
+private def statusOf (code : Nat) : Status :=
+  (Status.ofCode none code.toUInt16).getD .badRequest
+
+private def jsonResponse (code : Nat) (body : Json) : ContextAsync (Response Body.Any) := do
+  let response ← Response.withStatus (statusOf code) |>.json (Json.compress body)
+  -- OAuth 2.1 §3.2.3: nothing an endpoint here answers with may be held by a cache, and the
+  -- tokens are the reason.
+  pure (withHeader response (Header.Name.mk "cache-control") "no-store")
+
+private def refused (refusal : Authorization.Refusal) : ContextAsync (Response Body.Any) :=
+  jsonResponse refusal.status refusal.toJson
+
+/-- The parameters as the request sent them, from wherever that request carries them: the
+authorization request in the query string, the token and registration requests in the body. They
+are read apart rather than merged, because a token request that took a parameter from the query
+would read one the client did not sign up to send there. -/
+private def queryParams (req : Request Body.Stream) : Authorization.Params :=
+  ((req.extensions.get Params).map (Authorization.params ·.query)).getD []
+
+private def formParams (req : Request Body.Stream) : Authorization.Params :=
+  ((req.extensions.get Params).map (Authorization.params ·.form)).getD []
+
+def metadataHandler (site : Authorization.Site) (_req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) :=
+  jsonResponse 200 site.metadata
+
+/-- What a client that was refused at the MCP endpoint follows to find out where to ask for a
+token. -/
+def resourceMetadataHandler (site : Authorization.Site) (_req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) :=
+  jsonResponse 200 site.resourceMetadata
+
+private def seeOther (location : String) : ContextAsync (Response Body.Any) := do
+  let response ← Response.withStatus .seeOther |>.html ""
+  pure (withHeader response (Header.Name.mk "location") location)
+
+/-- The three outcomes that need nothing further asked. `consent` is the fourth and is the
+caller's, because what it does with one depends on whether the person has answered yet. -/
+private def settle (req : Request Body.Stream)
+    (asked : Authorization.Prompt → ContextAsync (Response Body.Any)) :
+    Authorization.Outcome → ContextAsync (Response Body.Any)
+  | .respond redirect => seeOther redirect.location
+  | .refuse error => refusedClientPage error.description |> Response.badRequest.html
+  | .authenticate => toSignIn req
+  | .consent prompt => asked prompt
+
+/-- Which scopes the person left ticked, narrowed by `conclude` to what was asked for either way.
+
+Anything but `allow` is a refusal, which is what makes the deny button ordinary rather than
+special: a submission that reaches here without saying `allow` has not granted anything. -/
+private def decisionFor (req : Request Body.Stream) (prompt : Authorization.Prompt) :
+    Authorization.Decision :=
+  let ticked (scope : Authorization.Scope) : Bool :=
+    ((req.extensions.get Params).bind (·.get (approvalField scope))).isSome
+  if (req.extensions.get Params).bind (·.get "decision") == some "allow" then
+    .granted prompt (prompt.requestedScopes.filter ticked)
+  else
+    .denied prompt
+
+/-- The authorization endpoint, and the consent page that hangs off it.
+
+Both methods are the one route, and deliberately: the form posts back to the URL it was served
+from, so what `conclude` acts on is the request as it arrived rather than a copy of it
+reassembled out of hidden fields. Running `authorize` again on the way through is what re-reads
+it, and costs a client lookup that is cached.
+
+Unlike every other route a browser reaches, this one is not behind `guarded`. Whether a request
+with no session should sign somebody in, refuse, or redirect an error to the client is the
+authorization server's answer to give, and `prompt=none` is a case where sending the browser to
+a sign-in page would be wrong. -/
+def authorizeHandler (site : Authorization.Site) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  let session := (req.extensions.get Cookies).bind (·.get Auth.sessionCookie)
+  settle req
+    (fun prompt => do
+      if req.line.method == .post then
+        -- `conclude` answers with a redirect or a refusal and never asks again, so reaching the
+        -- consent branch here would mean the library had changed under this code.
+        settle req (fun _ => refusedClientPage "" |> Response.internalServerError.html)
+          (← (site.conclude (decisionFor req prompt) : IO _))
+      else
+        consentPage prompt (target req) ((req.extensions.get AntiForgeryToken).map (·.value))
+          |> Response.ok.html)
+    (← (site.authorize (queryParams req) session : IO _))
+
+def tokenHandler (site : Authorization.Site) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  match ← (site.token (formParams req) : IO _) with
+  | .ok tokens => jsonResponse 200 tokens.toJson
+  | .error refusal => refused refusal
+
+/-- Registration takes JSON where the token endpoint takes a form, which is the protocol's doing
+rather than an inconsistency to smooth over: a parser that accepted either would accept a
+form-encoded registration, and this server has agreed to read no such thing. -/
+def registerHandler (site : Authorization.Site) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  let body ← MCP.StdHttp.collect req.body
+  match Json.parse (String.fromUTF8? body |>.getD "") with
+  | .error _ =>
+    refused { error := .invalidClientMetadata, description := "the request body is not JSON" }
+  | .ok document =>
+    let (status, answer) ← (site.register document : IO _)
+    jsonResponse status answer
+
 /-! ## The endpoint an outside agent reaches -/
 
-/-- A refusal that names the scheme and nothing else. There is no authorization server to point
-a client at yet, so there is no `resource_metadata` to carry: a client that cannot present the
-credential has nothing here it could discover its way to. -/
-private def unauthorized : ContextAsync (Response Body.Any) := do
-  let response ← Response.withStatus .unauthorized |>.text "Unauthorized"
-  pure (withHeader response (Header.Name.mk "www-authenticate") "Bearer")
-
-/-- Every tool the panel's model has, offered to whatever agent the person brought.
-
-Unlike every route above, this one is reached with no session and no anti-forgery token: an
-agent holds a credential rather than a cookie, which is why `Todo.server` keeps it outside the
-middleware that requires one. The account is the settings', not the request's, until there is an
-authorization server to name one per token. -/
-def mcpHandler (store : Store) (settings : Option Mcp.Settings) (req : Request Body.Stream) :
+/-- A refusal that says where to go and ask for a token, which is the whole of how an agent
+holding nothing finds its way in: RFC 9728 puts the resource's own metadata document behind
+`resource_metadata`, and that document names the authorization server. -/
+private def refuse (site : Authorization.Site) (rejection : Authorization.Rejection) :
     ContextAsync (Response Body.Any) := do
-  let some settings := settings
-    | "Not Found" |> Response.notFound.text
+  let (status, challenge) := site.challenge rejection
+  let response ← Response.withStatus (statusOf status) |>.text "Unauthorized"
+  pure (withHeader response (Header.Name.mk "www-authenticate") challenge)
+
+/-- Every tool the panel's model has, offered to whatever agent the person brought, as whoever
+granted the token it presents and narrowed to what they granted.
+
+Unlike the browser routes, this one is reached with no session and no anti-forgery token: an
+agent holds a token rather than a cookie, which is why `Todo.server` keeps it outside the
+middleware that requires one. -/
+def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
   let presented := (req.line.headers.getLast? (Header.Name.mk "authorization")).map toString
-  let some credential := Mcp.bearer? presented
-    | unauthorized
-  if !Mcp.presents settings credential then unauthorized else
+  let some credential := Authorization.bearer? presented
+    | refuse site .unknown
+  match ← (site.verify credential : IO _) with
+  | .error rejection => refuse site rejection
+  | .ok claims =>
     let bytes ← MCP.StdHttp.collect req.body
-    let served ← (MCP.serve Mcp.config (Mcp.server store) settings.account
+    let served ← (MCP.serve Mcp.config (Mcp.server store claims.scopes) claims.account
       (MCP.StdHttp.requestOf req.line bytes)).run (parentSpan req)
     MCP.StdHttp.responseOf served
 
@@ -320,7 +446,8 @@ private def guarded (identity : Identity)
   | some account => handler account req
   | none => toSignIn req
 
-def app (identity : Identity) (store : Store) (assistant : Assistant) : StatelessHandler :=
+def app (identity : Identity) (store : Store) (assistant : Assistant)
+    (authorization : Authorization.Site) : StatelessHandler :=
   let byId (handler : Store → Account → Nat → Request Body.Stream →
       ContextAsync (Response Body.Any)) := fun id =>
     guarded identity (handler store · id ·)
@@ -339,7 +466,11 @@ def app (identity : Identity) (store : Store) (assistant : Assistant) : Stateles
     .post patterns.signOut (guarded identity (signOutHandler identity)),
     .post patterns.chat (guarded identity (chatHandler store assistant)),
     .get patterns.chatStatus (guarded identity (chatStatusHandler store assistant)),
-    .delete patterns.chat (guarded identity (chatResetHandler assistant))
+    .delete patterns.chat (guarded identity (chatResetHandler assistant)),
+    -- Here rather than beside the machine-facing endpoints because this is the one a person
+    -- answers, and answering it has to be protected from another site posting the answer.
+    .get patterns.oauthAuthorize (authorizeHandler authorization),
+    .post patterns.oauthAuthorize (authorizeHandler authorization)
   ]
 
 /-- The sign-in routes carry an anti-forgery token of their own, derived from the attempt cookie
@@ -354,15 +485,23 @@ private def underAuth (req : Request Body.Stream) : Bool :=
   | "t" :: name :: _ => name == Todo.tenant.value
   | _ => false
 
-/-- The MCP endpoint is served beside the application for the reason the sign-in routes are: it
-answers requests that carry no session, and `antiForgery` refuses those. -/
-private def underMcp (req : Request Body.Stream) : Bool :=
-  req.line.uri.path.toDecodedSegments.toList == ["mcp"]
+/-- The endpoints a client reaches rather than a browser, served beside the application for the
+reason the sign-in routes are: they answer requests that carry no session, and `antiForgery`
+refuses those. The two metadata documents are here because they answer with no session either,
+and everything inside the application redirects a request without one to the sign-in page.
 
-private def split (auth mcp application : StatelessHandler) : StatelessHandler :=
+The authorization endpoint is the exception and stays inside, because a person answers it. -/
+private def underClient (req : Request Body.Stream) : Bool :=
+  match req.line.uri.path.toDecodedSegments.toList with
+  | ["mcp"] | ["oauth", "token"] | ["oauth", "register"] => true
+  | [".well-known", "oauth-authorization-server"] => true
+  | [".well-known", "oauth-protected-resource"] => true
+  | _ => false
+
+private def split (auth client application : StatelessHandler) : StatelessHandler :=
   { onRequest := fun req =>
       if underAuth req then auth.onRequest req
-      else if underMcp req then mcp.onRequest req
+      else if underClient req then client.onRequest req
       else application.onRequest req }
 
 /-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
@@ -376,12 +515,16 @@ session cookie `secure` and sends `hsts`. Claiming it falsely is the damaging di
 `sslRedirect` is absent whichever way `https` goes, because neither deployment has a plaintext
 listener to redirect a caller away from. -/
 def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (store : Store)
-    (assistant : Assistant) (sessions : σ) (https : Bool := false)
-    (mcpSettings : Option Mcp.Settings := none) : StatelessHandler :=
-  let mcp := toHandler
-    [ .post patterns.mcp (mcpHandler store mcpSettings),
-      .get patterns.mcp (mcpHandler store mcpSettings),
-      .delete patterns.mcp (mcpHandler store mcpSettings) ]
+    (assistant : Assistant) (sessions : σ) (authorization : Authorization.Site)
+    (https : Bool := false) : StatelessHandler :=
+  let client := toHandler
+    [ .post patterns.mcp (mcpHandler store authorization),
+      .get patterns.mcp (mcpHandler store authorization),
+      .delete patterns.mcp (mcpHandler store authorization),
+      .post patterns.oauthToken (tokenHandler authorization),
+      .post patterns.oauthRegister (registerHandler authorization),
+      .get patterns.oauthMetadata (metadataHandler authorization),
+      .get patterns.mcpMetadata (resourceMetadataHandler authorization) ]
   Middleware.apply
     ([forwardedScheme, forwardedRemoteAddr]
       ++ (if https then [hsts] else [])
@@ -398,6 +541,7 @@ def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (st
           defaultCharset,
           notModified,
           file "public"])
-    (split auth mcp (Middleware.apply [antiForgery] (app identity store assistant)))
+    (split auth client
+      (Middleware.apply [antiForgery] (app identity store assistant authorization)))
 
 end Todo

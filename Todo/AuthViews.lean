@@ -7,6 +7,8 @@ module
 
 public import Html
 public import AuthenticationHttp
+public import Middleware
+public import Todo.Authorization
 public import Todo.Tenant
 public import Todo.Views
 
@@ -178,5 +180,77 @@ def pages : Authentication.Http.Pages where
       [ h2 ["Not found"],
         p ["That link has been used, has expired, or was never ours. Asking for a new one is \
             the way out of all three."] ]
+
+/-! ## Letting an agent in
+
+The authorisation server settles what may be asked for; what somebody sees before answering is
+this application's, and the specification is specific about parts of it. -/
+
+/-- The name a client gave itself, which is a string it chose and nobody checked. Shown as such,
+never as a heading, and always beside a host that did not choose it. -/
+private def claimedName (name : String) : String :=
+  if name.trimAscii.isEmpty then "An application" else name
+
+/-- The field name a scope's checkbox carries. One name per scope rather than one repeated name,
+so each is read back with an ordinary single-valued lookup. -/
+def approvalField (scope : Authentication.OAuth.Scope) : String := "approve-" ++ scope.value
+
+/-- What is shown when the client, or the address it asked to be sent back to, could not be
+established.
+
+Nothing is sent to the client, because nothing about it has been established, so the person is
+told instead. The description comes from the authorisation server and describes the request
+rather than the person, so it is safe to show and is the only thing here that says what went
+wrong. -/
+def refusedClientPage (description : String) : String :=
+  shell "That request was refused"
+    [ h2 ["That request was refused"],
+      p ["Something asked to use your todo list, and this server could not establish what it \
+          was. Nothing has been sent to it."] { class_ := "warn" },
+      p [if description.trimAscii.isEmpty then "No further detail was given." else description],
+      p [a { href := Routes.links.index } ["Back to your todos"]] ]
+
+/-- What the person is being asked, and the only page in this application where saying yes gives
+something other than a browser access to the list.
+
+Everything the MCP authorization specification requires be displayed is displayed: the host the
+answer will be sent to, and the host of the identifier the client is known by, which is `none`
+for a client that registered dynamically and so has no domain vouching for its name. That a
+client's redirect URIs are all loopback carries a warning of its own, because no document can
+establish who is listening on a port of this person's own machine.
+
+The scopes are checkboxes rather than one yes: granting an agent the run of the list when it
+only ever needed to read it is the mistake worth making easy to avoid. `conclude` narrows
+whatever comes back to what was asked for, so nothing here can widen a grant. -/
+def consentPage (prompt : Authentication.OAuth.Service.ConsentPrompt Todo.tenant)
+    (action : String) (token : Option String) : String :=
+  let name := claimedName prompt.client.metadata.clientName
+  let vouching : List (Node .flow) :=
+    match prompt.clientHost with
+    | some host => [p [s!"It identifies itself at {host}."]]
+    | none => [p ["It registered itself with this server, so nothing vouches for that name."]]
+  let loopback : List (Node .flow) :=
+    if prompt.loopbackOnly then
+      [p ["It is running on this device. Nothing can establish what it is, beyond that you \
+           started it."] { class_ := "warn" }]
+    else []
+  shell s!"Allow {name}?"
+    ([ h2 [s!"Allow {name}?"],
+       p [s!"{name} is asking to use your todo list."] ]
+      ++ vouching
+      ++ [p [s!"If you allow it, your answer is sent to {prompt.redirectHost}."]]
+      ++ loopback
+      ++ [ form
+             ([ (Html.label ["It is asking to:"] : Node .flow),
+                (ul (prompt.requestedScopes.map fun scope =>
+                  li [ input
+                         { type := "checkbox", name := approvalField scope, value := "on",
+                           checked := true, id := approvalField scope },
+                       Html.label [Todo.Authorization.describe scope]
+                         { for_ := approvalField scope } ]) : Node .flow) ]
+               ++ hidden ({} : Middleware.AntiForgeryOptions).paramName token
+               ++ [ (button ["Allow"] { name := "decision", value := "allow" } : Node .flow),
+                    (button ["Deny"] { name := "decision", value := "deny" } : Node .flow) ])
+             { method := "post", action } ])
 
 end Todo

@@ -77,12 +77,11 @@ def main : IO Unit := Async.block do
         senderAddress := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩
         transport := Authentication.EmailTransport.console }
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
-    let mcpSettings ← Todo.Mcp.settingsFromEnv site.identity.accountFor
     let server ← serve addr
       (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions
-        (mcpSettings := mcpSettings))
+        site.authorization)
     IO.println s!"Listening on http://localhost:{port}"
-    if mcpSettings.isSome then IO.println s!"MCP endpoint at http://localhost:{port}/mcp"
+    IO.println s!"MCP endpoint at http://localhost:{port}/mcp"
     server.waitShutdown
   finally
     Sdk.shutdown

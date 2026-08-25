@@ -99,19 +99,36 @@ export AWS_REGION=<region>
 export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
-An agent of your own can reach the same tools over
-[MCP](https://modelcontextprotocol.io) at `/mcp`, rather than through the panel. Setting both of
-these turns the endpoint on; leaving either unset means there is no endpoint at all:
+## Bringing your own agent
 
-```
-export MCP_TOKEN=<any-secret>
-export MCP_ACCOUNT=<the-email-address-you-sign-in-with>
-```
+An agent of your own can reach the same tools the panel has, over
+[MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent
+at the endpoint and it will find its own way in.
 
-Every request must carry `Authorization: Bearer $MCP_TOKEN`, and every one of them acts as
-`MCP_ACCOUNT`. That is a single credential for a single list, which is enough to point a client
-at while the OAuth flow that issues one per person is being built, and not enough for anything
-else. The endpoint is not part of the deployment in [template.yaml](template.yaml).
+What it follows is the discovery chain the MCP authorization specification defines. A request
+carrying no token is refused with a `WWW-Authenticate` naming
+`/.well-known/oauth-protected-resource`; that document names this server as the one that issues
+tokens for the endpoint; and `/.well-known/oauth-authorization-server` describes the endpoints an
+agent needs. An agent that has no client identifier registers itself at `/oauth/register`.
+
+Signing in happens in your browser, once: the agent sends you to `/oauth/authorize`, and you are
+shown who is asking, the address your answer will be sent to, and what it wants to do. Two scopes
+are on offer and they are separate checkboxes, so an agent that asked for both can be given one:
+
+| Scope | What it reaches |
+| --- | --- |
+| `todos:read` | `list_todos` |
+| `todos:write` | `add_todo`, `edit_todo`, `delete_todo`, `set_done` |
+
+A token reaches only the tools its scopes name, and only your list. An agent holding a read-only
+token is not shown the tools it cannot use, so it plans around what it has rather than being
+turned away mid-task.
+
+Two things to know. Client identifiers that are URLs
+([CIMD](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)) are
+refused, because nothing here fetches them; agents that register dynamically are unaffected, and
+most do. And after signing in you land on your todo list rather than back on the consent page, so
+the agent has to ask again; that is a limitation of the sign-in library rather than of this.
 
 ## Deploying
 

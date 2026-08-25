@@ -12,6 +12,7 @@ public import AuthenticationPostgres
 public import Postgres
 public import Middleware
 public import Todo.AuthMail
+public import Todo.Authorization
 public import Todo.AuthViews
 public import Todo.Tenant
 
@@ -100,14 +101,22 @@ def tenantConfig (settings : Settings) (t : TenantId) : TenantConfig t where
   -- The application is mounted at the root, so a session cookie confined to the tenant's own
   -- path would never be offered to any route that needs it.
   sessionCookiePath := "/"
-  returnToAllowlist := ["/", "/active", "/completed"]
+  -- `/oauth/authorize` is here because an authorization request that arrives with nobody signed
+  -- in has to survive signing in: the allowlist is matched against the path alone, so the
+  -- request's own parameters ride along and the person lands back on the consent page rather
+  -- than on the list, with the agent still waiting.
+  returnToAllowlist := ["/", "/active", "/completed", Routes.links.oauthAuthorize]
 
 structure Site where
   ports : Service.Ports IO
+  authorization : Todo.Authorization.Site
   settings : Settings
 
 def site (pool : _root_.Postgres.Pool) (settings : Settings) : Site where
   ports := ports pool settings
+  authorization :=
+    Todo.Authorization.site (Todo.Authorization.ports pool { current := settings.pepper })
+      settings.baseUrl
   settings
 
 namespace Site
@@ -141,18 +150,6 @@ private def identify (s : Site) (req : Request Body.Stream) : IO (Option Todo.Ac
 private def addressOf (s : Site) (account : Todo.Account) : IO (Option String) := do
   pure ((← s.ports.store.accountById Todo.tenant account).map (·.primaryEmail.render))
 
-/-- The account that signs in with `raw`, if one does. The inverse of `addressOf`, and the way in
-for anything configured by a person: an address is what they know, and an account id is a string
-they would have to go looking in a database for.
-
-An address that does not parse is one no account can have, so it is answered the same way as one
-that parses and belongs to nobody. -/
-private def accountFor (s : Site) (raw : String) : IO (Option Todo.Account) := do
-  match EmailAddress.parse raw with
-  | .error _ => pure none
-  | .ok address =>
-    pure ((← s.ports.store.accountByIdentity Todo.tenant address.normalise).map (·.id))
-
 /-- Ends the session the request arrived on, and only that one: signing out of a browser is not a
 statement about any other browser the account is signed in on. -/
 private def signOut (s : Site) (req : Request Body.Stream) (account : Todo.Account) : IO Unit := do
@@ -169,13 +166,11 @@ Each is `IO` because that is what the library ports are. -/
 structure Identity where
   of : Request Body.Stream → IO (Option Todo.Account)
   address : Todo.Account → IO (Option String)
-  accountFor : String → IO (Option Todo.Account)
   signOut : Request Body.Stream → Todo.Account → IO Unit
 
 def Site.identity (s : Site) : Identity where
   of := identify s
   address := addressOf s
-  accountFor := accountFor s
   signOut := signOut s
 
 /-- Rebuilds the transport from `fresh` for every send.

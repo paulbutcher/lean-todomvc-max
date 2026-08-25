@@ -23,4 +23,9 @@ route_table Routes
     chat            := "/chat",
     chatStatus      := "/chat/status",
     todosStatus     := "/todos/status",
-    mcp             := "/mcp" ]
+    mcp             := "/mcp",
+    oauthAuthorize  := "/oauth/authorize",
+    oauthToken      := "/oauth/token",
+    oauthRegister   := "/oauth/register",
+    oauthMetadata   := "/.well-known/oauth-authorization-server",
+    mcpMetadata     := "/.well-known/oauth-protected-resource" ]

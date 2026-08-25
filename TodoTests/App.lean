@@ -24,7 +24,7 @@ private def completed : Item := { id := 2, title := "beta", completed := true }
 private def signedInAs (account : Account) (initial : Array Item) : IO TestHandler := do
   let store ← memoryStore account initial
   pure (Todo.app (fixedIdentity account (← IO.mkRef 0)) store
-    (← scriptedAssistant #[])).onRequest
+    (← scriptedAssistant #[]) noGrants).onRequest
 
 private def handlerOf (initial : Array Item) : IO TestHandler := signedInAs alice initial
 
@@ -62,7 +62,8 @@ no title, so a missing or unparsed form body can't reach storage. -/
 private def testCreateWithoutATitle : IO Unit := do
   let store ← memoryStore alice #[]
   check "POST /todos" (mkPost "/todos" "" "Connection: close\x0d\n")
-    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])).onRequest
+    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
+      noGrants).onRequest
     fun response => do
       assertStatus response "HTTP/1.1 400"
   checkEq "nothing was created" (0 : Nat)
@@ -72,7 +73,8 @@ private def testCreateWithoutATitle : IO Unit := do
 than shown somebody's list or told the item it named does not exist. -/
 private def testAnonymousRequestsAreSentToSignIn : IO Unit := do
   let store ← memoryStore alice #[active]
-  let handler := (Todo.app anonymousIdentity store (← scriptedAssistant #[])).onRequest
+  let handler :=
+    (Todo.app anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
   check "GET / with no session" (mkGetClose "/") handler fun response => do
     assertStatus response "HTTP/1.1 303"
     assertContains response "/t/todomvc/signin"
@@ -85,7 +87,7 @@ private def testAnonymousHtmxRequestsAreToldToNavigate : IO Unit := do
   let store ← memoryStore alice #[active]
   check "POST /todos/1/toggle with no session"
     (mkPost "/todos/1/toggle" "" "HX-Request: true\x0d\nConnection: close\x0d\n")
-    (Todo.app anonymousIdentity store (← scriptedAssistant #[])).onRequest
+    (Todo.app anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
     fun response => do
       assertContains response "Redirect: /t/todomvc/signin"
       assertAbsent response "HTTP/1.1 303"
@@ -95,7 +97,8 @@ reading finds nothing and mutating changes nothing. -/
 private def testOneAccountCannotReachAnother : IO Unit := do
   let store ← memoryStore alice #[active]
   let asBob :=
-    (Todo.app (fixedIdentity bob (← IO.mkRef 0)) store (← scriptedAssistant #[])).onRequest
+    (Todo.app (fixedIdentity bob (← IO.mkRef 0)) store (← scriptedAssistant #[])
+      noGrants).onRequest
   check "GET / as another account" (mkGetClose "/") asBob fun response =>
     assertAbsent response "alpha"
   check "DELETE another account's item"
@@ -111,7 +114,8 @@ private def testSignOutRevokesAndClearsTheCookie : IO Unit := do
   let store ← memoryStore alice #[]
   let revocations ← IO.mkRef 0
   check "POST /signout" (mkPost "/signout" "" "Connection: close\x0d\n")
-    (Todo.app (fixedIdentity alice revocations) store (← scriptedAssistant #[])).onRequest
+    (Todo.app (fixedIdentity alice revocations) store (← scriptedAssistant #[])
+      noGrants).onRequest
     fun response => do
       assertContains response "auth_session="
       assertContains response "Max-Age=0"
@@ -123,7 +127,7 @@ private def serverOf (https : Bool) : IO TestHandler := do
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
   pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store (← scriptedAssistant #[])
-    sessions (https := https)).onRequest
+    sessions noGrants (https := https)).onRequest
 
 /-- Only a deployment with something terminating TLS in front of it may mark the session cookie
 `secure` or claim `hsts`. The permissive direction is the harmful one: a `secure` cookie sent over
@@ -147,7 +151,8 @@ private def testSignInRoutesAreServedOutsideAntiForgery : IO Unit := do
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "the sign-in routes answered" }
   let handler :=
-    (Todo.server anonymousIdentity auth store (← scriptedAssistant #[]) sessions).onRequest
+    (Todo.server anonymousIdentity auth store (← scriptedAssistant #[]) sessions
+      noGrants).onRequest
   check "POST /t/todomvc/signin with no token"
     (mkPost "/t/todomvc/signin" "email=someone@example.com" "Connection: close\x0d\n") handler
     fun response => do

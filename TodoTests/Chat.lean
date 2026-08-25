@@ -167,7 +167,7 @@ alone cannot read one; the rest of the stack `Todo.server` wraps them in is not 
 checked here, and the `antiForgery` in it would refuse a post carrying no token. -/
 private def panelOf (assistant : Assistant) (store : Store) : IO TestHandler := do
   pure (Middleware.apply [Middleware.params]
-    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store assistant)).onRequest
+    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store assistant noGrants)).onRequest
 
 /-- The conversation as a pair per message, since `LLMClient.Msg` has no `Repr` for a failure to
 be reported through. What each message is and what it says is the whole of what these check. -/

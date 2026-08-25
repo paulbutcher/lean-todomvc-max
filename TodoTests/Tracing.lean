@@ -30,7 +30,7 @@ private def serverOf (store : Store) : IO TestHandler := do
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
   pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store
-    (← scriptedAssistant #[]) sessions).onRequest
+    (← scriptedAssistant #[]) sessions noGrants).onRequest
 
 private def spansFor (handler : TestHandler) (raw : String)
     (expect : ByteArray → IO Unit := fun _ => pure ()) : IO (Array SpanData) := do
