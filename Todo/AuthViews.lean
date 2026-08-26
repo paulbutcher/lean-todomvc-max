@@ -174,8 +174,16 @@ private def claimedName (name : String) : String :=
   if name.trimAscii.isEmpty then "An application" else name
 
 /-- The field name a scope's checkbox carries. One name per scope rather than one repeated name,
-so each is read back with an ordinary single-valued lookup. -/
-def approvalField (scope : Authentication.OAuth.Scope) : String := "approve-" ++ scope.value
+so each is read back with an ordinary single-valued lookup.
+
+Encoded rather than the scope's own text, because a form field is matched by the bytes it comes
+back as. A browser serialising `application/x-www-form-urlencoded` escapes everything outside
+`A-Za-z0-9*-._`, so a scope named `todos:read` returns as `approve-todos%3Aread`, and a lookup
+that encodes `:` as itself never matches it. What the scope contains is the client's choice, not
+this application's, so the name is put beyond that choice rather than trusted to stay inside it.
+-/
+def approvalField (scope : Authentication.OAuth.Scope) : String :=
+  "approve-" ++ Codec.Base64Url.encodeString scope.value.toUTF8
 
 /-- What is shown when the client, or the address it asked to be sent back to, could not be
 established.

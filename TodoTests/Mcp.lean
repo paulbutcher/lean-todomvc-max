@@ -272,6 +272,23 @@ private def testEachScopeIsItsOwnAnswer : IO Unit := do
     checkEq s!"{scope.value} has a box" true
       (mentions page (approvalField scope))
 
+/-- A form field is matched by the bytes it comes back as, so its name has to be one a browser
+returns unchanged.
+
+`application/x-www-form-urlencoded` escapes everything outside this set, and a lookup that
+encodes a character as itself never matches the escape a browser sent instead. What a scope is
+called is the client's choice, so the test is over any scope a client could ask for rather than
+over the two this server offers. -/
+private def testAnApprovalFieldSurvivesBeingPostedByABrowser : IO Unit := do
+  let unescaped (c : Char) : Bool :=
+    c.isAlphanum || c == '*' || c == '-' || c == '.' || c == '_'
+  let asked := Authorization.scopes ++ [⟨"a b"⟩, ⟨"%"⟩, ⟨"+"⟩, ⟨"emoji🙂"⟩]
+  for scope in asked do
+    checkEq s!"the field for {scope.value} needs no escaping" true
+      ((approvalField scope).all unescaped)
+  checkEq "and distinct scopes keep distinct fields" asked.length
+    ((asked.map approvalField).eraseDups.length)
+
 /-! ## The list on the page catching up -/
 
 private def watch (digest : String) : String :=
@@ -331,6 +348,7 @@ def runMcpTests : IO Unit := do
   testTheConsentPageSaysWhoIsAskingAndWhereTheAnswerGoes
   testALoopbackClientIsCalledOut
   testEachScopeIsItsOwnAnswer
+  testAnApprovalFieldSurvivesBeingPostedByABrowser
   testTheDigestFollowsEveryVisibleChange
   testAPollThatIsUpToDateChangesNothing
   testAChangeMadeElsewhereReachesThePage
