@@ -20,6 +20,7 @@ route_table Routes
     toggleAll       := "/todos/toggle-all",
     clearCompleted  := "/todos/clear-completed",
     signOut         := "/signout",
+    connect         := "/connect",
     chat            := "/chat",
     chatStatus      := "/chat/status",
     todosStatus     := "/todos/status",

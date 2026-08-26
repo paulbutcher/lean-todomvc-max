@@ -105,6 +105,15 @@ An agent of your own can reach the same tools the panel has, over
 [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent
 at the endpoint and it will find its own way in.
 
+Nobody has to know that to use it. "Want to use your own agent?" under the assistant panel leads
+to `/connect`, which carries a prompt to paste into an assistant of your own. It tells that
+assistant to look up its own current documentation rather than go by what it remembers, since a
+model's picture of its own settings is as old as its training data; to say so plainly if it cannot
+reach an MCP server at all, rather than invent a menu; and to call `list_todos` once it is done,
+so that both sides know it worked. Nothing on the page is secret, which is what having done OAuth
+rather than a shared token buys: the thing being pasted into somebody else's chat window is a
+public address.
+
 What it follows is the discovery chain the MCP authorization specification defines. A request
 carrying no token is refused with a `WWW-Authenticate` naming
 `/.well-known/oauth-protected-resource`; that document names this server as the one that issues

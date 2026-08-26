@@ -123,7 +123,8 @@ def chatPanel (messages : Array Msg) (turn : Option TurnState) : Node .flow :=
               placeholder := "Ask about your todos" },
           (Htmx.button ["Send"] { class_ := "chat-send" } : Node .flow) ]
         { class_ := "chat-form", hxPost := links.chat, hxTarget := "#chat-conversation",
-          hxSwap := some .outerHTML, hxOnHtmx := [("after-request", "this.reset()")] } ]
+          hxSwap := some .outerHTML, hxOnHtmx := [("after-request", "this.reset()")] },
+      p [a { href := links.connect } ["Want to use your own agent?"]] { class_ := "chat-aside" } ]
     { id := "chat-panel", class_ := "chat-panel" }
 
 end Todo

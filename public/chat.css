@@ -321,3 +321,20 @@ body.resizing {
     border-top: 1px solid var(--chat-border);
   }
 }
+
+/* The way out of the panel, for somebody who would rather use an assistant of their own. Under
+   the prompt because it is the alternative to what is above it, not part of it. */
+.chat-aside {
+  margin: 0;
+  padding: 0 12px 12px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.chat-aside a {
+  color: #777;
+}
+
+.chat-aside a:hover {
+  color: #b83f45;
+}

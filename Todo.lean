@@ -18,6 +18,7 @@ public import Todo.Db
 public import Todo.Migrations
 public import Todo.Links
 public import Todo.Views
+public import Todo.ConnectViews
 public import Todo.App
 
 public section

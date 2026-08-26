@@ -160,6 +160,21 @@ private def testSignInRoutesAreServedOutsideAntiForgery : IO Unit := do
   check "POST /todos with no token" (mkPost "/todos" "title=x" "Connection: close\x0d\n") handler
     fun response => assertStatus response "HTTP/1.1 403"
 
+/-- What somebody is handed to set up an agent of their own has to name the address that agent
+will be challenged toward. The page says it in prose and the discovery document says it to a
+machine; a person told a different one would set their agent up against nothing. -/
+private def testTheConnectPageNamesTheEndpointAnAgentReaches : IO Unit := do
+  check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
+    fun response => assertContains response (Authorization.resource testBase).value
+
+/-- And every scope the server offers is explained there. One added to the registry and not to
+the page would be one somebody is asked to grant without being told what it reaches. -/
+private def testTheConnectPageExplainsEveryScopeOnOffer : IO Unit := do
+  let handler ← handlerOf #[]
+  for scope in Authorization.scopes do
+    check s!"GET /connect, which explains {scope.value}" (mkGetClose Routes.links.connect)
+      handler fun response => assertContains response (Authorization.describe scope)
+
 def runAppTests : IO Unit :=
   runGroup "Todo.App" do
     testPageFiltersItemsButCountsThemAll
@@ -172,5 +187,7 @@ def runAppTests : IO Unit :=
     testSignOutRevokesAndClearsTheCookie
     testTlsProfileGatesCookieAndHsts
     testSignInRoutesAreServedOutsideAntiForgery
+    testTheConnectPageNamesTheEndpointAnAgentReaches
+    testTheConnectPageExplainsEveryScopeOnOffer
 
 end TodoTests

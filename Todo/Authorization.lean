@@ -126,6 +126,9 @@ def ports (pool : _root_.Postgres.Pool) (peppers : PepperRing) : OAuth.Service.P
 Same reason `Todo.Store` and `Todo.Auth.Identity` are records: the handlers can then be driven
 without a database, and what happens against a real one is settled where it happens. -/
 structure Site where
+  /-- The address an agent is pointed at, which is the one thing somebody setting one up has to
+  be told. -/
+  endpoint : String
   /-- The RFC 8414 document, which is how a client learns the endpoints exist at all. -/
   metadata : Json
   /-- The RFC 9728 document, which is how a client learns which server issues tokens for here. -/
@@ -142,10 +145,11 @@ structure Site where
   server's own address is. -/
   challenge : Rejection → Nat × String
 
-/-- The four documents and values that are settled by the address alone, so that anything
+/-- Everything that is settled by the address alone, so that anything
 standing in for the operations still answers these the way a deployment would. -/
 def describing (base : BaseUrl) : Site :=
-  { metadata := Authorization.metadata base
+  { endpoint := (Authorization.resource base).value
+    metadata := Authorization.metadata base
     resourceMetadata := Authorization.resourceMetadata base
     challenge := challengeFor base
     authorize := fun _ _ => pure (.refuse { error := .serverError, description := "" })

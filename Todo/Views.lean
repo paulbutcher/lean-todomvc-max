@@ -40,6 +40,27 @@ def chatCss : LinkAttrs :=
 def chatScript : ScriptAttrs :=
   { src := "/chat.js" }
 
+/-- What the sign-in pages and the connect page need beyond todomvc-app-css, which styles a list
+and not prose. -/
+def authCss : LinkAttrs :=
+  { rel := "stylesheet", href := "/auth.css" }
+
+/-- A page that is read rather than worked in, in the shell the todo list uses so that leaving
+the list does not look like leaving the site. The heading floats above the card on
+`todomvc-app-css`'s own positioning; it is here for that rather than to say anything. -/
+def cardPage (heading : String) (children : List (Node .flow)) : String :=
+  document
+    [ head
+        [ meta_ [("charset", "utf-8")],
+          meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
+          title heading, link todomvcCss, link authCss, link favicon ],
+      body
+        [ section_
+            [ header [h1 ["todos"]] { class_ := "header" },
+              div children { class_ := "auth" } ]
+            { class_ := "todoapp" } ] ]
+    (lang := "en")
+
 /-- Puts the anti-forgery token on `<body>` as an `hx-headers` attribute, which HTMX inherits
 down the whole tree, so every mutating request below carries it. `none` when no `antiForgery`
 middleware established a token, in which case there's nothing to send. -/

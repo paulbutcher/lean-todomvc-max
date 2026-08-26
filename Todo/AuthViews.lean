@@ -20,27 +20,9 @@ open Authentication.Http (PageContext)
 
 namespace Todo
 
-def authCss : LinkAttrs := { rel := "stylesheet", href := "/auth.css" }
-
 /-- Where the library answers, which is also where somebody with nothing left to try has to go
 back to. -/
 def signInPath : String := Authentication.BaseUrl.tenantPath Todo.tenant ++ "/signin"
-
-/-- The same shell the todo list uses, so signing in does not look like a different site. The
-heading floats above the card on `todomvc-app-css`'s own positioning; it is here for that rather
-than to say anything. -/
-private def shell (heading : String) (children : List (Node .flow)) : String :=
-  document
-    [ head
-        [ meta_ [("charset", "utf-8")],
-          meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
-          title heading, link todomvcCss, link authCss, link favicon ],
-      body
-        [ section_
-            [ header [h1 ["todos"]] { class_ := "header" },
-              div children { class_ := "auth" } ]
-            { class_ := "todoapp" } ] ]
-    (lang := "en")
 
 private def hidden (name : String) (value : Option String) : List (Node .flow) :=
   match value with
@@ -97,7 +79,7 @@ private def codeAside (context : PageContext) (expanded : Bool := false) : List 
 
 def pages : Authentication.Http.Pages where
   signIn context :=
-    shell s!"Sign in to {context.tenantName}"
+    cardPage s!"Sign in to {context.tenantName}"
       [ h2 ["Sign in"],
         p ["Enter your address and we will mail you a link. There is no password to remember."],
         form
@@ -122,7 +104,7 @@ def pages : Authentication.Http.Pages where
   sent context message :=
     match message with
     | .checkYourMail =>
-      shell "Check your mail"
+      cardPage "Check your mail"
         ([ h2 ["Check your mail"],
            p [messageText message],
            p ["Open the link on this device and you are signed in. There is nothing to type."],
@@ -130,12 +112,12 @@ def pages : Authentication.Http.Pages where
                limit on how often you can ask."] { class_ := "note" } ]
           ++ codeAside context)
     | refusal =>
-      shell "No link sent"
+      cardPage "No link sent"
         [ h2 ["No link sent"],
           p [messageText refusal] { class_ := "warn" },
           p [a { href := signInPath } ["Try again"]] ]
   confirm context :=
-    shell s!"Sign in to {context.tenantName}"
+    cardPage s!"Sign in to {context.tenantName}"
       [ h2 ["One more tap"],
         p ["You opened this link in the browser you asked from, so this is the last step."],
         form
@@ -143,7 +125,7 @@ def pages : Authentication.Http.Pages where
             ++ [(button ["Sign in"] : Node .flow)])
           { method := "post", action := context.action } ]
   code context shown :=
-    shell "Your verification code"
+    cardPage "Your verification code"
       [ h2 ["Your verification code"],
         p ["Type this into the browser you asked to sign in from. It will not sign you in on \
             this device."],
@@ -158,13 +140,13 @@ def pages : Authentication.Http.Pages where
   -- read and rejected, which for an expired link it was not.
   codeRejected context remaining :=
     if remaining == 0 then
-      shell "Ask for a new link"
+      cardPage "Ask for a new link"
         [ h2 ["This link is finished"],
           p ["Either its attempts ran out or it expired. A new one takes a moment."]
             { class_ := "warn" },
           p [a { href := signInPath } ["Ask for a new link"]] ]
     else
-      shell "That code was not right"
+      cardPage "That code was not right"
         ([ h2 ["That code was not right"],
            p [if remaining == 1 then
                 "One more attempt before this link stops working."
@@ -173,10 +155,10 @@ def pages : Authentication.Http.Pages where
              { class_ := "warn" } ]
           ++ codeAside context (expanded := true))
   refused context reason :=
-    shell s!"Sign in to {context.tenantName}"
+    cardPage s!"Sign in to {context.tenantName}"
       [ h2 ["Not signed in"], p [refusalText reason] ]
   unknown :=
-    shell "Not found"
+    cardPage "Not found"
       [ h2 ["Not found"],
         p ["That link has been used, has expired, or was never ours. Asking for a new one is \
             the way out of all three."] ]
@@ -203,7 +185,7 @@ told instead. The description comes from the authorisation server and describes 
 rather than the person, so it is safe to show and is the only thing here that says what went
 wrong. -/
 def refusedClientPage (description : String) : String :=
-  shell "That request was refused"
+  cardPage "That request was refused"
     [ h2 ["That request was refused"],
       p ["Something asked to use your todo list, and this server could not establish what it \
           was. Nothing has been sent to it."] { class_ := "warn" },
@@ -234,7 +216,7 @@ def consentPage (prompt : Authentication.OAuth.Service.ConsentPrompt Todo.tenant
       [p ["It is running on this device. Nothing can establish what it is, beyond that you \
            started it."] { class_ := "warn" }]
     else []
-  shell s!"Allow {name}?"
+  cardPage s!"Allow {name}?"
     ([ h2 [s!"Allow {name}?"],
        p [s!"{name} is asking to use your todo list."] ]
       ++ vouching

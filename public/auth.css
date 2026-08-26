@@ -108,3 +108,38 @@ Released under Apache 2.0 license as described in the file LICENSE.
   font-size: 14px;
   color: #777;
 }
+
+/* The prompt somebody hands to their own assistant. A `readonly` textarea rather than a block
+   of prose, because what has to happen next is a select-all and a copy, and a textarea is what
+   a browser will select the whole of on its own. */
+.auth textarea.prompt {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: 2px;
+  resize: vertical;
+}
+
+.auth textarea.prompt:focus {
+  outline: none;
+  border-color: #b83f45;
+  box-shadow: 0 0 2px 2px #cf7d7d;
+}
+
+.auth ul {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+
+.auth .endpoint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}

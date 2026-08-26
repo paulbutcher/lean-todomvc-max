@@ -14,6 +14,7 @@ public import Todo.Auth
 public import Todo.Store
 public import Todo.Links
 public import Todo.Views
+public import Todo.ConnectViews
 public import Todo.ChatTurn
 public import Todo.Mcp
 
@@ -187,6 +188,13 @@ def listStatusHandler (store : Store) (account : Account) (req : Request Body.St
     let filter := currentFilter req
     let items ← (store.list account filter).run parent
     listRefreshFragment items allItems filter |> Response.ok.html
+
+/-- The address of the MCP endpoint, and what to hand an assistant of your own so that it can
+set itself up against it. Behind the session like the rest of the application, though nothing on
+it is private: what it describes is this account's list, and somebody reading it has one. -/
+def connectHandler (authorization : Authorization.Site) (_account : Account)
+    (_req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
+  connectPage authorization.endpoint |> Response.ok.html
 
 /-- Ends this browser's session and clears the cookie carrying it. Clearing without revoking
 would leave a credential that still works in the hands of whoever recovers the cookie, and
@@ -464,6 +472,7 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
     .post patterns.toggleAll (guarded identity (toggleAllHandler store)),
     .delete patterns.clearCompleted (guarded identity (clearCompletedHandler store)),
     .post patterns.signOut (guarded identity (signOutHandler identity)),
+    .get patterns.connect (guarded identity (connectHandler authorization)),
     .post patterns.chat (guarded identity (chatHandler store assistant)),
     .get patterns.chatStatus (guarded identity (chatStatusHandler store assistant)),
     .delete patterns.chat (guarded identity (chatResetHandler assistant)),
