@@ -105,39 +105,6 @@ An agent of your own can reach the same tools the panel has, over
 [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent
 at the endpoint and it will find its own way in.
 
-Nobody has to know that to use it. "Want to use your own agent?" under the assistant panel leads
-to `/connect`, which carries a prompt to paste into an assistant of your own. It tells that
-assistant to look up its own current documentation rather than go by what it remembers, since a
-model's picture of its own settings is as old as its training data; to say so plainly if it cannot
-reach an MCP server at all, rather than invent a menu; and to call `list_todos` once it is done,
-so that both sides know it worked. Nothing on the page is secret, which is what having done OAuth
-rather than a shared token buys: the thing being pasted into somebody else's chat window is a
-public address.
-
-What it follows is the discovery chain the MCP authorization specification defines. A request
-carrying no token is refused with a `WWW-Authenticate` naming
-`/.well-known/oauth-protected-resource`; that document names this server as the one that issues
-tokens for the endpoint; and `/.well-known/oauth-authorization-server` describes the endpoints an
-agent needs. An agent that has no client identifier registers itself at `/oauth/register`.
-
-Signing in happens in your browser, once: the agent sends you to `/oauth/authorize`, and you are
-shown who is asking, the address your answer will be sent to, and what it wants to do. Two scopes
-are on offer and they are separate checkboxes, so an agent that asked for both can be given one:
-
-| Scope | What it reaches |
-| --- | --- |
-| `todos:read` | `list_todos` |
-| `todos:write` | `add_todo`, `edit_todo`, `delete_todo`, `set_done` |
-
-A token reaches only the tools its scopes name, and only your list. An agent holding a read-only
-token is not shown the tools it cannot use, so it plans around what it has rather than being
-turned away mid-task.
-
-One thing to know. Client identifiers that are URLs
-([CIMD](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)) are
-refused, because nothing here fetches them; agents that register dynamically are unaffected, and
-most do.
-
 ## Deploying
 
 [template.yaml](template.yaml) defines an AWS [SAM](https://aws.amazon.com/serverless/sam/)

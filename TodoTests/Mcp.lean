@@ -98,6 +98,21 @@ private def testAnAgentHoldingNothingCanFindTheWayIn : IO Unit := do
       -- turn every agent away at the first step.
       assertContains response "S256"
 
+/-- What the document offers and what the server will do have to agree.
+
+Nothing here fetches a client's metadata document, so a client told it may use a URL as its
+identifier is told to take the one path that ends in a refusal, and it believes the document
+rather than trying the other way afterwards. What it costs to get this wrong is every client that
+prefers that mechanism, which is not a small set. -/
+private def testTheServerOffersNoWayInThatEndsInARefusal : IO Unit := do
+  let store ← memoryStore alice #[]
+  let handler ← siteOf store
+  check "the authorization server's own document" (mkGetClose links.oauthMetadata) handler
+    fun response => do
+      assertContains response "\"client_id_metadata_document_supported\":false"
+      -- The way in that is left, which has to still be there for the withdrawal to be safe.
+      assertContains response (Authorization.config testBase).registrationEndpoint
+
 /-- Both documents answer whoever asks. They are what a client reads before it has anything to
 present, so a refusal here is a client that can never get started. -/
 private def testDiscoveryNeedsNoCredential : IO Unit := do
@@ -291,6 +306,7 @@ private def testAChangeMadeElsewhereReachesThePage : IO Unit := do
 def runMcpTests : IO Unit := do
   testAnAgentHoldingNothingCanFindTheWayIn
   testDiscoveryNeedsNoCredential
+  testTheServerOffersNoWayInThatEndsInARefusal
   testATokenIsRequired
   testAFullTokenReachesEveryTool
   testAReadOnlyTokenReachesOnlyTheReadingTools

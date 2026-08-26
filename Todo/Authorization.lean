@@ -63,7 +63,20 @@ def config (base : BaseUrl) : OAuth.OAuthConfig Todo.tenant where
   registrationEndpoint := origin base ++ links.oauthRegister
   scopesSupported := scopes
 
-def metadata (base : BaseUrl) : Json := OAuth.metadataDocument (config base)
+/-- The library's document, less the one claim this deployment cannot make good on.
+
+`client_id_metadata_document_supported` is what tells a client it may use a URL as its identifier
+instead of registering. A client that takes the offer is then refused, because `noDocuments`
+fetches nothing and the deployed function sits in a VPC with no route to the internet that could.
+Offering it is what makes it a dead end; withdrawing it sends the same client to
+`/oauth/register`, which needs nothing this deployment does not have.
+
+The library states it unconditionally, on the reasoning that it describes the protocol rather
+than a deployment. It describes both: whether a document can be fetched is exactly a property of
+where the server is standing. -/
+def metadata (base : BaseUrl) : Json :=
+  Json.mergeObj (OAuth.metadataDocument (config base))
+    (Json.mkObj [("client_id_metadata_document_supported", .bool false)])
 
 /-- Where a client is told to look for the authorization server, which is what a refusal from
 the MCP endpoint carries so that an agent holding no token can find its way to one. -/
@@ -108,7 +121,11 @@ def challengeFor (base : BaseUrl) (rejection : Rejection) : Nat × String :=
 
 /-- No adapter fetches a client's metadata document, so a `client_id` that is a URL is refused
 and a client registers dynamically instead. Both are ways in and clients implement both; this is
-the one that needs no outbound HTTP, which is not something this application otherwise does.
+the one that needs no outbound HTTP, which the deployed function has no route for at all.
+
+Which is why `metadata` withdraws the offer of the other one. A client believes the document
+before it believes a refusal, so leaving the offer standing does not leave two ways in: it leaves
+one way in and one that ends here.
 
 Refusing rather than omitting the port because the port has no default: what a deployment without
 a fetcher does is exactly this, and saying it here is what makes it visible. -/
