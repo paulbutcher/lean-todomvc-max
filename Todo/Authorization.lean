@@ -184,10 +184,16 @@ token reaches is filtered away, so what arrives is a connection with no tools on
 anywhere saying why. Agents that name no scopes are the common case rather than the odd one.
 
 The default is everything on offer, which is not the same as granting it: the consent page still
-asks, and a box unticked there is a scope withheld. -/
+asks, and a box unticked there is a scope withheld.
+
+A `scope` that is present and blank counts as absent. It is the same request in every way that
+matters, and the difference between naming nothing and naming no scopes is not one a person
+consenting could be shown. -/
 def withDefaultScopes (params : Params) : Params :=
-  if params.any (·.1 == "scope") then params
-  else params ++ [("scope", String.intercalate " " (scopes.map (·.value)))]
+  let named := params.any fun (name, value) => name == "scope" && !value.trimAscii.isEmpty
+  if named then params
+  else (params.filter (·.1 != "scope"))
+    ++ [("scope", String.intercalate " " (scopes.map (·.value)))]
 
 def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
   let config := Authorization.config base

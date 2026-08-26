@@ -26,7 +26,7 @@ open Html
 open Routing
 open Middleware
 open Routes
-open Telemetry (SpanContext)
+open Telemetry (SpanContext TelemetryT)
 
 namespace Todo
 
@@ -382,6 +382,14 @@ a sign-in page would be wrong. -/
 def authorizeHandler (site : Authorization.Site) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
   let session := (req.extensions.get Cookies).bind (·.get Auth.sessionCookie)
+  -- What a client asked for, said out loud. An agent that reaches the end of this flow holding a
+  -- token that names no scope arrives at the MCP endpoint to find no tools and nothing to read,
+  -- and the request that decided it is not otherwise recorded anywhere: spans carry the route,
+  -- not the query.
+  (Telemetry.info "authorization requested"
+    [ ("oauth.scope_requested",
+        .str ((queryParams req |>.find? (·.1 == "scope")).map (·.2) |>.getD "<absent>")) ]
+    : TelemetryT Async Unit).run (parentSpan req)
   settle req
     (fun prompt => do
       if req.line.method == .post then
@@ -434,10 +442,23 @@ def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.S
     ContextAsync (Response Body.Any) := do
   let presented := (req.line.headers.getLast? (Header.Name.mk "authorization")).map toString
   let some credential := Authorization.bearer? presented
-    | refuse site .unknown
+    | do
+      (Telemetry.info "mcp call carried no bearer token" [] : TelemetryT Async Unit).run
+        (parentSpan req)
+      refuse site .unknown
   match ← (site.verify credential : IO _) with
-  | .error rejection => refuse site rejection
+  | .error rejection =>
+    (Telemetry.info "mcp token refused" [] : TelemetryT Async Unit).run (parentSpan req)
+    refuse site rejection
   | .ok claims =>
+    -- A token that names no scope reaches no tool, and an empty tool list is what a client shows
+    -- for that, for a refusal, and for a server it never reached. Which one it was is only ever
+    -- knowable here.
+    (Telemetry.info "mcp call authorized"
+      [("oauth.scope_held",
+        .str (if claims.scopes.isEmpty then "<none>"
+              else String.intercalate " " (claims.scopes.map (·.value))))]
+      : TelemetryT Async Unit).run (parentSpan req)
     let bytes ← MCP.StdHttp.collect req.body
     let served ← (MCP.serve Mcp.config (Mcp.server store claims.scopes) claims.account
       (MCP.StdHttp.requestOf req.line bytes)).run (parentSpan req)

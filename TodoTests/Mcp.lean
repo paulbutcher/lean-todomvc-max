@@ -104,13 +104,17 @@ Asking for nothing is answered without a consent page, because there is nothing 
 and the token it ends in reaches no tool at all. The client sees a connection with no tools on
 it, which is the one failure that says nothing about itself. -/
 private def testAClientThatNamesNoScopesAsksForEverything : IO Unit := do
-  let named := Authorization.withDefaultScopes [("client_id", "x"), ("scope", "todos:read")]
-  let unnamed := Authorization.withDefaultScopes [("client_id", "x")]
+  let everything := some (String.intercalate " " (Authorization.scopes.map (·.value)))
+  let scopeIn (params : Authorization.Params) : Option String :=
+    (params.find? (·.1 == "scope")).map (·.2)
   checkEq "a request that named one keeps it" (some "todos:read")
-    ((named.find? (·.1 == "scope")).map (·.2))
-  checkEq "and one that named none is read as asking for all of them"
-    (some (String.intercalate " " (Authorization.scopes.map (·.value))))
-    ((unnamed.find? (·.1 == "scope")).map (·.2))
+    (scopeIn (Authorization.withDefaultScopes [("client_id", "x"), ("scope", "todos:read")]))
+  checkEq "and one that named none is read as asking for all of them" everything
+    (scopeIn (Authorization.withDefaultScopes [("client_id", "x")]))
+  -- Present and blank is the same request as absent, and a client that sends it is not rare.
+  for blank in ["", " "] do
+    checkEq s!"as is one whose scope is {repr blank}" everything
+      (scopeIn (Authorization.withDefaultScopes [("client_id", "x"), ("scope", blank)]))
 
 /-- What the document offers and what the server will do have to agree.
 
