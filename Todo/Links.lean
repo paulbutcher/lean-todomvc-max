@@ -29,4 +29,5 @@ route_table Routes
     oauthToken      := "/oauth/token",
     oauthRegister   := "/oauth/register",
     oauthMetadata   := "/.well-known/oauth-authorization-server",
-    mcpMetadata     := "/.well-known/oauth-protected-resource" ]
+    mcpMetadata     := "/.well-known/oauth-protected-resource",
+    mcpMetadataForEndpoint := "/.well-known/oauth-protected-resource/mcp" ]

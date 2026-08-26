@@ -451,18 +451,22 @@ def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.S
     (Telemetry.info "mcp token refused" [] : TelemetryT Async Unit).run (parentSpan req)
     refuse site rejection
   | .ok claims =>
-    -- A token that names no scope reaches no tool, and an empty tool list is what a client shows
-    -- for that, for a refusal, and for a server it never reached. Which one it was is only ever
-    -- knowable here.
-    (Telemetry.info "mcp call authorized"
-      [("oauth.scope_held",
-        .str (if claims.scopes.isEmpty then "<none>"
-              else String.intercalate " " (claims.scopes.map (·.value))))]
-      : TelemetryT Async Unit).run (parentSpan req)
-    let bytes ← MCP.StdHttp.collect req.body
-    let served ← (MCP.serve Mcp.config (Mcp.server store claims.scopes) claims.account
-      (MCP.StdHttp.requestOf req.line bytes)).run (parentSpan req)
-    MCP.StdHttp.responseOf served
+    -- A token that reaches no tool is refused rather than served an empty list. Serving one is
+    -- indistinguishable from a server with nothing on it, so a client holding a grant made
+    -- before it knew what to ask for has no way to learn that it should ask again; the challenge
+    -- names the scopes it wants, which is what a client comes back for.
+    if (Mcp.permitted claims.scopes).isEmpty then
+      (Telemetry.info "mcp token holds no usable scope" [] : TelemetryT Async Unit).run
+        (parentSpan req)
+      refuse site (.insufficientScope Authorization.scopes)
+    else do
+      (Telemetry.info "mcp call authorized"
+        [("oauth.scope_held", .str (String.intercalate " " (claims.scopes.map (·.value))))]
+        : TelemetryT Async Unit).run (parentSpan req)
+      let bytes ← MCP.StdHttp.collect req.body
+      let served ← (MCP.serve Mcp.config (Mcp.server store claims.scopes) claims.account
+        (MCP.StdHttp.requestOf req.line bytes)).run (parentSpan req)
+      MCP.StdHttp.responseOf served
 
 /-! ## The router -/
 
@@ -526,6 +530,7 @@ private def underClient (req : Request Body.Stream) : Bool :=
   | ["mcp"] | ["oauth", "token"] | ["oauth", "register"] => true
   | [".well-known", "oauth-authorization-server"] => true
   | [".well-known", "oauth-protected-resource"] => true
+  | [".well-known", "oauth-protected-resource", "mcp"] => true
   | _ => false
 
 private def split (auth client application : StatelessHandler) : StatelessHandler :=
@@ -554,7 +559,11 @@ def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (st
       .post patterns.oauthToken (tokenHandler authorization),
       .post patterns.oauthRegister (registerHandler authorization),
       .get patterns.oauthMetadata (metadataHandler authorization),
-      .get patterns.mcpMetadata (resourceMetadataHandler authorization) ]
+      .get patterns.mcpMetadata (resourceMetadataHandler authorization),
+      -- RFC 9728 §3 puts the resource's own path into the well-known URL, and that is the form a
+      -- client tries first. Both are served because a client that tried only the shorter one
+      -- would otherwise have nothing to read.
+      .get patterns.mcpMetadataForEndpoint (resourceMetadataHandler authorization) ]
   Middleware.apply
     ([forwardedScheme, forwardedRemoteAddr]
       ++ (if https then [hsts] else [])

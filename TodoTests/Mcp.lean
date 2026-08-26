@@ -31,9 +31,12 @@ routes stands in front of any of this. -/
 private def readOnly : String := "read-only-token"
 private def fullAccess : String := "full-access-token"
 
+private def scopeless : String := "scopeless-token"
+
 private def issued : List (String × Account × List Authorization.Scope) :=
   [ (readOnly, alice, [Authorization.read]),
-    (fullAccess, alice, [Authorization.read, Authorization.write]) ]
+    (fullAccess, alice, [Authorization.read, Authorization.write]),
+    (scopeless, alice, []) ]
 
 private def authorization : Authorization.Site := scriptedAuthorization testBase issued
 
@@ -139,6 +142,31 @@ private def testDiscoveryNeedsNoCredential : IO Unit := do
   for path in [links.mcpMetadata, links.oauthMetadata] do
     check s!"GET {path} with nothing at all" (mkGetClose path) handler fun response =>
       assertStatus response "HTTP/1.1 200"
+
+/-- A token that reaches no tool is refused, rather than served an empty list of them.
+
+An empty list is what a client shows for a server with nothing on it, so a grant made before the
+client knew what to ask for looks like success and stays broken. The challenge names the scopes
+instead, which is the only thing that tells a client to come back and ask again. -/
+private def testATokenThatReachesNothingIsRefusedRatherThanServedNothing : IO Unit := do
+  let store ← memoryStore alice #[]
+  let handler ← siteOf store
+  check "a token carrying no scopes" (call listTools (some s!"Bearer {scopeless}")) handler
+    fun response => do
+      assertStatus response "HTTP/1.1 403"
+      assertContains response "insufficient_scope"
+      for scope in Authorization.scopes do
+        assertContains response scope.value
+
+/-- RFC 9728 puts the resource's path into the well-known URL, and that is the form a client
+tries first: a 404 there costs it the document unless it also tries the shorter one. -/
+private def testTheResourceDocumentIsWhereAClientLooksFirst : IO Unit := do
+  let store ← memoryStore alice #[]
+  let handler ← siteOf store
+  for path in [links.mcpMetadata, links.mcpMetadataForEndpoint] do
+    check s!"GET {path}" (mkGetClose path) handler fun response => do
+      assertStatus response "HTTP/1.1 200"
+      assertContains response (Authorization.resource testBase).value
 
 /-! ## What a token admits -/
 
@@ -341,6 +369,8 @@ private def testAChangeMadeElsewhereReachesThePage : IO Unit := do
 def runMcpTests : IO Unit := do
   testAnAgentHoldingNothingCanFindTheWayIn
   testDiscoveryNeedsNoCredential
+  testTheResourceDocumentIsWhereAClientLooksFirst
+  testATokenThatReachesNothingIsRefusedRatherThanServedNothing
   testTheServerOffersNoWayInThatEndsInARefusal
   testAClientThatNamesNoScopesAsksForEverything
   testATokenIsRequired
