@@ -35,6 +35,17 @@ Project-specific guidance for Claude Code when working in this repo.
 - Never use an emdash (—). Wherever you might use one, use either a comma or a
   semicolon instead.
   
+## Length
+
+Applies to comments, documentation, CLAUDE.md itself, and replies.
+
+- Each addition is justifiable alone; the cost is cumulative. Before adding, ask what this file
+  reads like after twenty more additions as justifiable as this one.
+- Prefer tightening an existing line to adding a new one.
+- State the rule. Give the reason only where it would otherwise look arbitrary or be misapplied.
+- A new section is at most five bullets of one or two lines. More than that is more than one
+  rule, and they are not all worth keeping.
+
 ## Environment
 
 - Installing OS packages should be done by infrastructure external to this project so
@@ -95,6 +106,17 @@ Project-specific guidance for Claude Code when working in this repo.
 - Never use a partial function unless it's absolutely essential.
 - Never use a function which might panic (typically indicated by an exclamation mark at
   the end of the function name) unless it's absolution essential.
+
+## Logging
+
+- Write the logging with the code, not when something breaks. What was not recorded cannot be
+  recovered.
+- Log at a decision the response cannot express: an empty list and a bare 403 say nothing about
+  which cause produced them.
+- Record the value that decided the branch. "refused" is worth little; "refused, scopes held:
+  none" ends the investigation.
+- A span carries the route, not the query, so what was asked for is recorded only if logged.
+- Don't log ordinary success where a span already records the request.
 
 ## UI code
 
