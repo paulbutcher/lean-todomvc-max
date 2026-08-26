@@ -175,6 +175,27 @@ private def testTheConnectPageExplainsEveryScopeOnOffer : IO Unit := do
     check s!"GET /connect, which explains {scope.value}" (mkGetClose Routes.links.connect)
       handler fun response => assertContains response (Authorization.describe scope)
 
+/-- Somebody whose assistant has stopped working needs a way out of it from here, and the way out
+is a request to this application rather than something to do in the assistant. -/
+private def testTheConnectPageOffersAWayToWithdrawApprovals : IO Unit := do
+  check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
+    fun response => assertContains response Routes.links.disconnect
+
+/-- And asking withdraws for whoever asked. An account is what a grant belongs to, so a button
+that withdrew for anybody else would leave the one who pressed it exactly as stuck. -/
+private def testDisconnectingWithdrawsForTheAccountThatAsked : IO Unit := do
+  let asked ← IO.mkRef ([] : List String)
+  let store ← memoryStore alice #[]
+  let authorization :=
+    { noGrants with disconnect := fun account => do
+        asked.modify (account.value :: ·)
+        pure 3 }
+  check "POST /connect/disconnect" (mkPost Routes.links.disconnect "" "Connection: close\x0d\n")
+    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
+      authorization).onRequest
+    fun response => assertContains response "Disconnected"
+  checkEq "it withdrew for the account that asked" [alice.value] (← asked.get)
+
 def runAppTests : IO Unit :=
   runGroup "Todo.App" do
     testPageFiltersItemsButCountsThemAll
@@ -189,5 +210,7 @@ def runAppTests : IO Unit :=
     testSignInRoutesAreServedOutsideAntiForgery
     testTheConnectPageNamesTheEndpointAnAgentReaches
     testTheConnectPageExplainsEveryScopeOnOffer
+    testTheConnectPageOffersAWayToWithdrawApprovals
+    testDisconnectingWithdrawsForTheAccountThatAsked
 
 end TodoTests

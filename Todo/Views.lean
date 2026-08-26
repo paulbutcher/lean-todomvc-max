@@ -61,6 +61,13 @@ def cardPage (heading : String) (children : List (Node .flow)) : String :=
             { class_ := "todoapp" } ] ]
     (lang := "en")
 
+/-- A form field carrying something the browser sends back rather than shows, and nothing at all
+when there is nothing to carry. -/
+def hidden (name : String) (value : Option String) : List (Node .flow) :=
+  match value with
+  | none => []
+  | some value => [input { type := "hidden", name, value }]
+
 /-- Puts the anti-forgery token on `<body>` as an `hx-headers` attribute, which HTMX inherits
 down the whole tree, so every mutating request below carries it. `none` when no `antiForgery`
 middleware established a token, in which case there's nothing to send. -/

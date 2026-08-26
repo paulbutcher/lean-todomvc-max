@@ -24,11 +24,6 @@ namespace Todo
 back to. -/
 def signInPath : String := Authentication.BaseUrl.tenantPath Todo.tenant ++ "/signin"
 
-private def hidden (name : String) (value : Option String) : List (Node .flow) :=
-  match value with
-  | none => []
-  | some value => [input { type := "hidden", name, value }]
-
 /-- Every outcome of asking for a link maps to one of these. Which outcomes are allowed to reach
 a distinct one is `Todo.Auth.messageFor`'s decision rather than this function's: the wording here
 is faithful to each case, and what keeps a case unreachable is the policy. -/

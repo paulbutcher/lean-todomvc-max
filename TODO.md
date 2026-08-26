@@ -4,9 +4,9 @@ Loose ends, most pressing first. Written 2026-08-26.
 
 ## Next
 
-- **Revoke button.** "Disconnect every agent" on `/connect`: iterate `store.clients`, call
-  `Service.revoke account client resource` for each. Blunt on purpose; the proper list needs a
-  library addition (below).
+- **Deploy and try the revoke button.** Built: `/connect` posts to `/connect/disconnect`, which
+  sweeps every registration this server holds and withdraws each for the account that asked.
+  Blunt on purpose; the proper list needs a library addition (below).
 - **Then answer two questions with it.** Does a revoked token make Claude re-authorize, or does
   the loop just move from 403 to 401? And what does it actually send as `scope`, which
   `oauth.scope_requested` will show the first time authorization runs.

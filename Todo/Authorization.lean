@@ -158,6 +158,9 @@ structure Site where
   register : Json → IO (Nat × Json)
   /-- Whether a presented token may act here, and as whom. -/
   verify : String → IO (Except Rejection Claims)
+  /-- Withdraws every approval this account has given, and reports how many registrations were
+  swept. Swept is not revoked: nothing here can say which of them held anything. -/
+  disconnect : Todo.Account → IO Nat
   /-- What a refusal at the MCP endpoint answers with, which is `challengeFor` at whatever this
   server's own address is. -/
   challenge : Rejection → Nat × String
@@ -173,7 +176,8 @@ def describing (base : BaseUrl) : Site :=
     conclude := fun _ => pure (.refuse { error := .serverError, description := "" })
     token := fun _ => pure (.error { error := .serverError, description := "" })
     register := fun _ => pure (500, Json.mkObj [])
-    verify := fun _ => pure (.error .unknown) }
+    verify := fun _ => pure (.error .unknown)
+    disconnect := fun _ => pure 0 }
 
 /-- What a client that named no scopes is taken to have asked for.
 
@@ -220,7 +224,16 @@ def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
       | .ok record => pure (OAuth.Registration.createdStatus, OAuth.Registration.response record)
       | .error refusal => pure (refusal.status, refusal.toJson)
     verify := fun presented =>
-      OAuth.Service.verify ports ⟨presented⟩ (Authorization.resource base) }
+      OAuth.Service.verify ports ⟨presented⟩ (Authorization.resource base)
+    -- Every registration this server holds, rather than the ones the consent history knows
+    -- about. A grant made without a consent prompt leaves nothing there, and that is exactly the
+    -- grant somebody reaching for this is trying to be rid of. Withdrawing one that was never
+    -- given records that it is not granted, which is what it already was.
+    disconnect := fun account => do
+      let clients ← ports.oauth.clients Todo.tenant
+      for client in clients do
+        OAuth.Service.revoke ports account client.id (Authorization.resource base)
+      pure clients.length }
 
 /-! ## Reading a request -/
 

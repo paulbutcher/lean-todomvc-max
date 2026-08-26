@@ -193,8 +193,22 @@ def listStatusHandler (store : Store) (account : Account) (req : Request Body.St
 set itself up against it. Behind the session like the rest of the application, though nothing on
 it is private: what it describes is this account's list, and somebody reading it has one. -/
 def connectHandler (authorization : Authorization.Site) (_account : Account)
-    (_req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
-  connectPage authorization.endpoint |> Response.ok.html
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
+  connectPage authorization.endpoint ((req.extensions.get AntiForgeryToken).map (·.value))
+    |> Response.ok.html
+
+/-- Withdraws every approval this account has given, and says so on the page it was asked from.
+
+The page rather than a redirect because there is nothing to carry a message through one, and
+answering the `POST` costs only a resubmission on refresh, which withdraws what is already
+withdrawn. -/
+def disconnectHandler (authorization : Authorization.Site) (account : Account)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  let swept ← (authorization.disconnect account : IO Nat)
+  (Telemetry.info "every agent disconnected" [("oauth.clients_swept", .int swept)]
+    : TelemetryT Async Unit).run (parentSpan req)
+  connectPage authorization.endpoint ((req.extensions.get AntiForgeryToken).map (·.value))
+    (disconnected := true) |> Response.ok.html
 
 /-- Ends this browser's session and clears the cookie carrying it. Clearing without revoking
 would leave a credential that still works in the hands of whoever recovers the cookie, and
@@ -502,6 +516,7 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
     .delete patterns.clearCompleted (guarded identity (clearCompletedHandler store)),
     .post patterns.signOut (guarded identity (signOutHandler identity)),
     .get patterns.connect (guarded identity (connectHandler authorization)),
+    .post patterns.disconnect (guarded identity (disconnectHandler authorization)),
     .post patterns.chat (guarded identity (chatHandler store assistant)),
     .get patterns.chatStatus (guarded identity (chatStatusHandler store assistant)),
     .delete patterns.chat (guarded identity (chatResetHandler assistant)),

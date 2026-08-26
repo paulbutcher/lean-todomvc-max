@@ -143,3 +143,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
   font-size: 13px;
   word-break: break-all;
 }
+
+/* The one thing on the connect page that takes something away, set apart from the rest of it
+   so that it is not read as part of the setting-up. */
+.auth .withdraw {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #ededed;
+}
