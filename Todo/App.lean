@@ -204,8 +204,8 @@ answering the `POST` costs only a resubmission on refresh, which withdraws what 
 withdrawn. -/
 def disconnectHandler (authorization : Authorization.Site) (account : Account)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  let swept ← (authorization.disconnect account : IO Nat)
-  (Telemetry.info "every agent disconnected" [("oauth.clients_swept", .int swept)]
+  let revoked ← (authorization.disconnect account : IO Nat)
+  (Telemetry.info "every agent disconnected" [("oauth.connections_revoked", .int revoked)]
     : TelemetryT Async Unit).run (parentSpan req)
   connectPage authorization.endpoint ((req.extensions.get AntiForgeryToken).map (·.value))
     (disconnected := true) |> Response.ok.html
@@ -372,17 +372,15 @@ private def settle (req : Request Body.Stream)
 /-- Which scopes the person left ticked, narrowed by `conclude` to what was asked for either way.
 
 Anything but `allow` is a refusal, which is what makes the deny button ordinary rather than
-special: a submission that reaches here without saying `allow` has not granted anything. -/
+special: a submission that reaches here without saying `allow` has not granted anything. So is
+allowing with every box unticked, which `conclude` settles: an approval narrowing to nothing is
+the same answer as denying. -/
 private def decisionFor (req : Request Body.Stream) (prompt : Authorization.Prompt) :
     Authorization.Decision :=
   let ticked (scope : Authorization.Scope) : Bool :=
     ((req.extensions.get Params).bind (·.get (approvalField scope))).isSome
-  let approved := prompt.requestedScopes.filter ticked
-  -- Allowing everything to be unticked is refusing, and is answered as a refusal. A grant of
-  -- nothing is a token that reaches nothing, which reads to whoever asked as though this had
-  -- worked.
-  if (req.extensions.get Params).bind (·.get "decision") == some "allow" && !approved.isEmpty then
-    .granted prompt approved
+  if (req.extensions.get Params).bind (·.get "decision") == some "allow" then
+    .granted prompt (prompt.requestedScopes.filter ticked)
   else
     .denied prompt
 

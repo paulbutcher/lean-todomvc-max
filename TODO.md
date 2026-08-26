@@ -36,27 +36,29 @@ call the tools against the deployed endpoint. What is left below is tidying, not
 
 ## lean-authentication
 
-Four defects, one feature. All need your say-so before I write specs.
+Pinned at `v0.10.0`, which took `empty-grant-spec.md` and `connections-enumeration-spec.md`, plus
+a fix of its own binding a code to what the consent page displayed rather than what the request
+said. Adopted here: the `token` guard and the `decisionFor` guard are gone, and `disconnect` uses
+`Service.connections`, so it is account-scoped and its count is true.
 
-- `client_id_metadata_document_supported` is advertised unconditionally. Make `ClientDocuments`
-  optional in `Ports` and derive the flag, so a deployment cannot advertise what it has no adapter
-  for.
-- A scopeless authorization request silently grants nothing, which is neither of the two answers
-  OAuth 2.1 §3.2.2.1 permits.
-- A token with an empty scope set is issued and refreshed. This is the one that cost the night: a
-  credential that can do nothing reads as success and the client refreshes it forever.
-- `conclude` accepts `.granted prompt []`. A grant of nothing is a denial however it arrived.
-- **Feature:** no way to enumerate an account's live connections. `Service.grants` reads consent
-  history, which misses any grant made without a consent prompt. Blocks the proper revoke page.
-
-If the four land, four workarounds here can go: the `metadata` merge, `withDefaultScopes`, the
-empty-scope half of the `token` guard, and the `decisionFor` guard.
+- **Still outstanding: `cimd-advertised-unconditionally-spec.md`** (in this session's scratchpad).
+  `client_id_metadata_document_supported` is still `.bool true` unconditionally and
+  `Ports.documents` is still required, so the `metadata` merge in `Todo/Authorization.lean` and
+  the `noDocuments` port both stay.
+- **Decide how the default scope set is expressed.** `withDefaultScopes` rewrites the `scope`
+  parameter before `authorize` sees it, so the recorded request claims the client asked for
+  something it did not. `v0.10.0`'s `ConsentPrompt.answered` is built for this case instead: amend
+  `requestedScopes` on the prompt and the code is bound to what was displayed. The behaviours
+  differ on a reconnecting scopeless client, which the first silently re-approves and the second
+  asks again.
 
 ## Other libraries
 
-- `Std.Http`'s `URI.Query.find?` compares *encoded* bytes, so a lookup key encoded one way never
-  matches a client's equivalent encoding. `Middleware.Params.get` inherits it. Raise upstream, or
-  have lean-middleware compare decoded names.
+- `params-encoded-lookup-spec.md` in this session's scratchpad, for lean-middleware `v0.9.0`:
+  `Std.Http`'s `URI.Query.findEncoded?` compares encoded bytes, and percent-encoding is not
+  canonical, so a browser's `%3A` never matches an encoder that leaves `:` alone.
+  `Middleware.Params.get` inherits it. The spec fixes it in middleware by comparing decoded names
+  and says why the upstream fix should be raised separately rather than waited on.
 
 ## This repo
 

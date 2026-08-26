@@ -321,20 +321,23 @@ private def testAnApprovalFieldSurvivesBeingPostedByABrowser : IO Unit := do
   checkEq "and distinct scopes keep distinct fields" asked.length
     ((asked.map approvalField).eraseDups.length)
 
-/-- What the consent form says when nothing is ticked, whichever button was pressed.
+/-- What the consent form's answer amounts to: the boxes that were ticked, and nothing else.
 
-A grant of nothing is a token that reaches nothing, and a client cannot tell that from success:
-it connects, finds no tools, and refreshes that same grant for as long as the refresh token
-lives. Allowing everything to be unticked is refusing, so it is answered as a refusal. -/
-private def testAllowingNothingIsRefusing : IO Unit := do
+Anything but `allow` is a refusal. An `allow` with every box unticked is one too, but converting
+it is not this layer's job: `conclude` reads an approval that narrows to nothing as a denial, and
+a guard here as well would be the same rule kept in two places. What is checked here is that the
+answer sent is the answer that was given. -/
+private def testTheConsentFormSendsTheAnswerThatWasGiven : IO Unit := do
   let store ← memoryStore alice #[]
-  let seen ← IO.mkRef (none : Option (List Authorization.Scope))
+  -- Three-valued so that "never called" is distinguishable from "granted nothing". Collapsing
+  -- them would let a post that never reached `conclude` pass as one that granted nothing.
+  let seen ← IO.mkRef (none : Option (Option (List Authorization.Scope)))
   let recording : Authorization.Site :=
     { scriptedAuthorization testBase (prompt := some (somePrompt)) with
       conclude := fun decision => do
-        seen.set (match decision with
+        seen.set (some (match decision with
           | .granted _ scopes => some scopes
-          | .denied _ => none)
+          | .denied _ => none))
         pure (.respond ⟨"https://agent.example/callback?done"⟩) }
   -- The router under `params` alone, rather than the whole stack: reading the form is what is
   -- being tested, and `antiForgery` stands in front of this route and would refuse a post
@@ -342,16 +345,17 @@ private def testAllowingNothingIsRefusing : IO Unit := do
   let handler := (Middleware.apply [Middleware.params]
     (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
       recording)).onRequest
-  let post (form : String) : IO (Option (List Authorization.Scope)) := do
-    seen.set (some [])
+  let post (form : String) : IO (Option (Option (List Authorization.Scope))) := do
+    seen.set none
     check "POST /oauth/authorize"
       (mkPost links.oauthAuthorize form
         "Content-Type: application/x-www-form-urlencoded\x0d\nConnection: close\x0d\n")
       handler (fun _ => pure ())
     seen.get
-  checkEq "allow with nothing ticked is a refusal" none (← post "decision=allow")
-  checkEq "and so is deny" none (← post "decision=deny")
-  checkEq "a box that is ticked is granted" (some [Authorization.read])
+  checkEq "deny is a refusal" (some none) (← post "decision=deny")
+  checkEq "allow with nothing ticked approves nothing, which `conclude` refuses"
+    (some (some [])) (← post "decision=allow")
+  checkEq "a box that is ticked is granted" (some (some [Authorization.read]))
     (← post s!"decision=allow&{approvalField Authorization.read}=on")
 
 /-! ## The list on the page catching up -/
@@ -416,7 +420,7 @@ def runMcpTests : IO Unit := do
   testALoopbackClientIsCalledOut
   testEachScopeIsItsOwnAnswer
   testAnApprovalFieldSurvivesBeingPostedByABrowser
-  testAllowingNothingIsRefusing
+  testTheConsentFormSendsTheAnswerThatWasGiven
   testTheDigestFollowsEveryVisibleChange
   testAPollThatIsUpToDateChangesNothing
   testAChangeMadeElsewhereReachesThePage

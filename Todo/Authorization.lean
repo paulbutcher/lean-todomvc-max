@@ -158,8 +158,7 @@ structure Site where
   register : Json → IO (Nat × Json)
   /-- Whether a presented token may act here, and as whom. -/
   verify : String → IO (Except Rejection Claims)
-  /-- Withdraws every approval this account has given, and reports how many registrations were
-  swept. Swept is not revoked: nothing here can say which of them held anything. -/
+  /-- Withdraws every connection this account holds here, and reports how many there were. -/
   disconnect : Todo.Account → IO Nat
   /-- What a refusal at the MCP endpoint answers with, which is `challengeFor` at whatever this
   server's own address is. -/
@@ -205,35 +204,18 @@ def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
     authorize := fun params session =>
       OAuth.Service.authorize ports config (withDefaultScopes params) (session.map (⟨·⟩))
     conclude := OAuth.Service.conclude ports config
-    -- A grant that reaches nothing is refused rather than reissued. Refusing at the endpoint that
-    -- serves it turns a stuck client into one that starts again, which is the whole of what
-    -- `invalid_grant` means: a client answered this way re-runs the authorization, where a
-    -- default scope and a consent page are waiting for it. Answered any other way it refreshes
-    -- the same empty grant for as long as the refresh token lives, and nothing it does on its own
-    -- can ever recover.
-    token := fun params => do
-      match ← OAuth.Service.token ports config params with
-      | .ok tokens =>
-        if tokens.scope.any scopes.contains then pure (.ok tokens)
-        else pure (.error
-          { error := .invalidGrant
-            description := "this grant reaches nothing here; ask again for the scopes you need" })
-      | refusal => pure refusal
+    token := OAuth.Service.token ports config
     register := fun body => do
       match ← OAuth.Service.register (tenant := Todo.tenant) ports body with
       | .ok record => pure (OAuth.Registration.createdStatus, OAuth.Registration.response record)
       | .error refusal => pure (refusal.status, refusal.toJson)
     verify := fun presented =>
       OAuth.Service.verify ports ⟨presented⟩ (Authorization.resource base)
-    -- Every registration this server holds, rather than the ones the consent history knows
-    -- about. A grant made without a consent prompt leaves nothing there, and that is exactly the
-    -- grant somebody reaching for this is trying to be rid of. Withdrawing one that was never
-    -- given records that it is not granted, which is what it already was.
     disconnect := fun account => do
-      let clients ← ports.oauth.clients Todo.tenant
-      for client in clients do
-        OAuth.Service.revoke ports account client.id (Authorization.resource base)
-      pure clients.length }
+      let live ← OAuth.Service.connections ports account
+      for connection in live do
+        OAuth.Service.revoke ports account connection.client connection.resource
+      pure live.length }
 
 /-! ## Reading a request -/
 
