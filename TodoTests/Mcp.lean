@@ -28,6 +28,35 @@ carrying nothing is told where to go, that a token reaches only the tools its sc
 only the list its account owns, and that none of the middleware standing in front of the browser
 routes stands in front of any of this. -/
 
+/-! ## What a token reaches
+
+The tests below drive the endpoint with tokens and read what comes back, which establishes these
+claims for the tools that exist today. These state them for every token and every tool, including
+the ones nobody has written yet: a tool added to the registry is covered the moment it compiles,
+which is what a table of cases cannot promise. -/
+
+/-- The whole of what the filter does, in both directions. Soundness alone would be satisfied by
+a server that offered nothing at all, so the other half is what makes the first mean anything. -/
+theorem permitted_iff (held : List Authentication.OAuth.Scope) (entry : ChatTools.Entry) :
+    entry ∈ Mcp.permitted held ↔ entry ∈ ChatTools.registry ∧ Mcp.scopeFor entry ∈ held := by
+  simp [Mcp.permitted, Array.mem_filter]
+
+/-- A grant that withheld `todos:write` reaches nothing that changes anything. This is what the
+consent page's second checkbox is for, and it holds however many tools are added and whatever
+they are called. -/
+theorem nothing_mutates_without_write (held : List Authentication.OAuth.Scope)
+    (entry : ChatTools.Entry) (withheld : Authorization.write ∉ held)
+    (offered : entry ∈ Mcp.permitted held) : entry.mutates = false := by
+  have holds := ((permitted_iff held entry).mp offered).2
+  by_cases mutates : entry.mutates
+  · simp [Mcp.scopeFor, mutates] at holds
+    exact absurd holds withheld
+  · simpa using mutates
+
+/-- A token holding no scopes reaches no tool, which is what `mcpHandler` refuses on rather than
+serving an empty catalogue. -/
+theorem permitted_none : Mcp.permitted [] = #[] := by simp [Mcp.permitted]
+
 private def readOnly : String := "read-only-token"
 private def fullAccess : String := "full-access-token"
 

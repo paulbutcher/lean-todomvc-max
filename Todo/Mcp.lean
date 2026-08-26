@@ -10,7 +10,7 @@ public import Todo.Authorization
 public import Todo.ChatTools
 public import Todo.ChatTurn
 
-public section
+@[expose] public section
 
 open Std.Async (Async)
 open Telemetry (TelemetryT)

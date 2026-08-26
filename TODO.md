@@ -15,8 +15,8 @@ call the tools against the deployed endpoint. What is left below is tidying, not
   revoking every grant server-side did not shift it. Moving the function URL did, first try. A new
   hostname is the only lever there is on that state.
 - Claude Code's authorization request names `todos:read todos:write` outright, so a client that
-  names no scopes is claude.ai's behaviour rather than the norm. `withDefaultScopes` earns its
-  place on that one client.
+  names no scopes is claude.ai's behaviour rather than the norm. The prompt default exists for
+  that one client.
 
 ## Deployment
 
@@ -62,12 +62,13 @@ its count is true.
 - **Harness helper for full-stack form posts**: GET to mint the anti-forgery token, harvest cookie
   and token, POST. Without it a test can drive a partial stack and pass vacuously, which one of
   mine did.
-- **Two theorems worth stating.** Factor the consent reading into a pure `decide` and prove a
-  grant is never empty; prove every tool `Mcp.permitted` offers is admitted by the held scopes.
+- Three theorems now state what `Mcp.permitted` does, in `TodoTests/Mcp.lean`. `Todo/Mcp.lean`
+  became `@[expose]` to allow it, which was free there: it has no private declarations.
 - Decide whether `mcp call authorized` stays. It fires per call and duplicates the span; the three
   refusal lines are rare and worth keeping.
-- README's "Bringing your own agent" is down to one paragraph. `/connect`, the two scopes, and the
-  fact that CIMD is not offered are all undocumented.
+- README's "Bringing your own agent" does not name the two scopes. Probably right: `/connect`
+  explains them to the person granting them, and the README is not where that decision is made.
+  Close this unless a reason to say them appears.
 - Offered and not added: a CLAUDE.md line that an `Option` whose `none` means "misconfigured" must
   never default into a value meaning "the caller asked for nothing".
 - A copy button on `/connect` needs ~10 lines of JavaScript, left out under the no-JS rule.
