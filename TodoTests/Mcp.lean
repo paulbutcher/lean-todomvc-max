@@ -98,6 +98,20 @@ private def testAnAgentHoldingNothingCanFindTheWayIn : IO Unit := do
       -- turn every agent away at the first step.
       assertContains response "S256"
 
+/-- A request that names no scopes asks for everything on offer, rather than for nothing.
+
+Asking for nothing is answered without a consent page, because there is nothing to put on one,
+and the token it ends in reaches no tool at all. The client sees a connection with no tools on
+it, which is the one failure that says nothing about itself. -/
+private def testAClientThatNamesNoScopesAsksForEverything : IO Unit := do
+  let named := Authorization.withDefaultScopes [("client_id", "x"), ("scope", "todos:read")]
+  let unnamed := Authorization.withDefaultScopes [("client_id", "x")]
+  checkEq "a request that named one keeps it" (some "todos:read")
+    ((named.find? (·.1 == "scope")).map (·.2))
+  checkEq "and one that named none is read as asking for all of them"
+    (some (String.intercalate " " (Authorization.scopes.map (·.value))))
+    ((unnamed.find? (·.1 == "scope")).map (·.2))
+
 /-- What the document offers and what the server will do have to agree.
 
 Nothing here fetches a client's metadata document, so a client told it may use a URL as its
@@ -307,6 +321,7 @@ def runMcpTests : IO Unit := do
   testAnAgentHoldingNothingCanFindTheWayIn
   testDiscoveryNeedsNoCredential
   testTheServerOffersNoWayInThatEndsInARefusal
+  testAClientThatNamesNoScopesAsksForEverything
   testATokenIsRequired
   testAFullTokenReachesEveryTool
   testAReadOnlyTokenReachesOnlyTheReadingTools

@@ -175,11 +175,25 @@ def describing (base : BaseUrl) : Site :=
     register := fun _ => pure (500, Json.mkObj [])
     verify := fun _ => pure (.error .unknown) }
 
+/-- What a client that named no scopes is taken to have asked for.
+
+OAuth 2.1 §3.2.2.1 leaves a server two answers to a request carrying no `scope`: a default, or a
+refusal. Granting nothing is neither, and it is the one that looks like success. The client is
+issued a token, the person is asked nothing because there is nothing to ask, and every tool the
+token reaches is filtered away, so what arrives is a connection with no tools on it and nothing
+anywhere saying why. Agents that name no scopes are the common case rather than the odd one.
+
+The default is everything on offer, which is not the same as granting it: the consent page still
+asks, and a box unticked there is a scope withheld. -/
+def withDefaultScopes (params : Params) : Params :=
+  if params.any (·.1 == "scope") then params
+  else params ++ [("scope", String.intercalate " " (scopes.map (·.value)))]
+
 def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
   let config := Authorization.config base
   { describing base with
     authorize := fun params session =>
-      OAuth.Service.authorize ports config params (session.map (⟨·⟩))
+      OAuth.Service.authorize ports config (withDefaultScopes params) (session.map (⟨·⟩))
     conclude := OAuth.Service.conclude ports config
     token := OAuth.Service.token ports config
     register := fun body => do
