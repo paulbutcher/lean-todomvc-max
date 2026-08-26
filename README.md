@@ -103,7 +103,8 @@ export BEDROCK_MODEL=<model-or-inference-profile-id>
 
 An agent of your own can reach the same tools the panel has, over
 [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent
-at the endpoint and it will find its own way in.
+at the endpoint and it will find its own way in. Instructions for helping the agent to do so at
+`/connect`.
 
 ## Deploying
 
