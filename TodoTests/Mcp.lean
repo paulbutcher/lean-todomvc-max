@@ -321,6 +321,39 @@ private def testAnApprovalFieldSurvivesBeingPostedByABrowser : IO Unit := do
   checkEq "and distinct scopes keep distinct fields" asked.length
     ((asked.map approvalField).eraseDups.length)
 
+/-- What the consent form says when nothing is ticked, whichever button was pressed.
+
+A grant of nothing is a token that reaches nothing, and a client cannot tell that from success:
+it connects, finds no tools, and refreshes that same grant for as long as the refresh token
+lives. Allowing everything to be unticked is refusing, so it is answered as a refusal. -/
+private def testAllowingNothingIsRefusing : IO Unit := do
+  let store ← memoryStore alice #[]
+  let seen ← IO.mkRef (none : Option (List Authorization.Scope))
+  let recording : Authorization.Site :=
+    { scriptedAuthorization testBase (prompt := some (somePrompt)) with
+      conclude := fun decision => do
+        seen.set (match decision with
+          | .granted _ scopes => some scopes
+          | .denied _ => none)
+        pure (.respond ⟨"https://agent.example/callback?done"⟩) }
+  -- The router under `params` alone, rather than the whole stack: reading the form is what is
+  -- being tested, and `antiForgery` stands in front of this route and would refuse a post
+  -- carrying no token, which is checked where that is the point.
+  let handler := (Middleware.apply [Middleware.params]
+    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
+      recording)).onRequest
+  let post (form : String) : IO (Option (List Authorization.Scope)) := do
+    seen.set (some [])
+    check "POST /oauth/authorize"
+      (mkPost links.oauthAuthorize form
+        "Content-Type: application/x-www-form-urlencoded\x0d\nConnection: close\x0d\n")
+      handler (fun _ => pure ())
+    seen.get
+  checkEq "allow with nothing ticked is a refusal" none (← post "decision=allow")
+  checkEq "and so is deny" none (← post "decision=deny")
+  checkEq "a box that is ticked is granted" (some [Authorization.read])
+    (← post s!"decision=allow&{approvalField Authorization.read}=on")
+
 /-! ## The list on the page catching up -/
 
 private def watch (digest : String) : String :=
@@ -383,6 +416,7 @@ def runMcpTests : IO Unit := do
   testALoopbackClientIsCalledOut
   testEachScopeIsItsOwnAnswer
   testAnApprovalFieldSurvivesBeingPostedByABrowser
+  testAllowingNothingIsRefusing
   testTheDigestFollowsEveryVisibleChange
   testAPollThatIsUpToDateChangesNothing
   testAChangeMadeElsewhereReachesThePage

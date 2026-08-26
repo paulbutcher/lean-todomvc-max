@@ -201,7 +201,20 @@ def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
     authorize := fun params session =>
       OAuth.Service.authorize ports config (withDefaultScopes params) (session.map (⟨·⟩))
     conclude := OAuth.Service.conclude ports config
-    token := OAuth.Service.token ports config
+    -- A grant that reaches nothing is refused rather than reissued. Refusing at the endpoint that
+    -- serves it turns a stuck client into one that starts again, which is the whole of what
+    -- `invalid_grant` means: a client answered this way re-runs the authorization, where a
+    -- default scope and a consent page are waiting for it. Answered any other way it refreshes
+    -- the same empty grant for as long as the refresh token lives, and nothing it does on its own
+    -- can ever recover.
+    token := fun params => do
+      match ← OAuth.Service.token ports config params with
+      | .ok tokens =>
+        if tokens.scope.any scopes.contains then pure (.ok tokens)
+        else pure (.error
+          { error := .invalidGrant
+            description := "this grant reaches nothing here; ask again for the scopes you need" })
+      | refusal => pure refusal
     register := fun body => do
       match ← OAuth.Service.register (tenant := Todo.tenant) ports body with
       | .ok record => pure (OAuth.Registration.createdStatus, OAuth.Registration.response record)

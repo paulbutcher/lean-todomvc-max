@@ -363,8 +363,12 @@ private def decisionFor (req : Request Body.Stream) (prompt : Authorization.Prom
     Authorization.Decision :=
   let ticked (scope : Authorization.Scope) : Bool :=
     ((req.extensions.get Params).bind (·.get (approvalField scope))).isSome
-  if (req.extensions.get Params).bind (·.get "decision") == some "allow" then
-    .granted prompt (prompt.requestedScopes.filter ticked)
+  let approved := prompt.requestedScopes.filter ticked
+  -- Allowing everything to be unticked is refusing, and is answered as a refusal. A grant of
+  -- nothing is a token that reaches nothing, which reads to whoever asked as though this had
+  -- worked.
+  if (req.extensions.get Params).bind (·.get "decision") == some "allow" && !approved.isEmpty then
+    .granted prompt approved
   else
     .denied prompt
 
