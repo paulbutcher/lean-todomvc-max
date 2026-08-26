@@ -36,15 +36,11 @@ call the tools against the deployed endpoint. What is left below is tidying, not
 
 ## lean-authentication
 
-Pinned at `v0.10.0`, which took `empty-grant-spec.md` and `connections-enumeration-spec.md`, plus
-a fix of its own binding a code to what the consent page displayed rather than what the request
-said. Adopted here: the `token` guard and the `decisionFor` guard are gone, and `disconnect` uses
-`Service.connections`, so it is account-scoped and its count is true.
+Pinned at `v0.12.0`. Every spec written this session has landed, and every workaround they were
+written to remove is gone: the `token` guard, the `decisionFor` guard, the `metadata` merge and
+the `noDocuments` port. `disconnect` now uses `Service.connections`, so it is account-scoped and
+its count is true.
 
-- **Still outstanding: `cimd-advertised-unconditionally-spec.md`** (in this session's scratchpad).
-  `client_id_metadata_document_supported` is still `.bool true` unconditionally and
-  `Ports.documents` is still required, so the `metadata` merge in `Todo/Authorization.lean` and
-  the `noDocuments` port both stay.
 - **Decide how the default scope set is expressed.** `withDefaultScopes` rewrites the `scope`
   parameter before `authorize` sees it, so the recorded request claims the client asked for
   something it did not. `v0.10.0`'s `ConsentPrompt.answered` is built for this case instead: amend
