@@ -101,24 +101,6 @@ private def testAnAgentHoldingNothingCanFindTheWayIn : IO Unit := do
       -- turn every agent away at the first step.
       assertContains response "S256"
 
-/-- A request that names no scopes asks for everything on offer, rather than for nothing.
-
-Asking for nothing is answered without a consent page, because there is nothing to put on one,
-and the token it ends in reaches no tool at all. The client sees a connection with no tools on
-it, which is the one failure that says nothing about itself. -/
-private def testAClientThatNamesNoScopesAsksForEverything : IO Unit := do
-  let everything := some (String.intercalate " " (Authorization.scopes.map (·.value)))
-  let scopeIn (params : Authorization.Params) : Option String :=
-    (params.find? (·.1 == "scope")).map (·.2)
-  checkEq "a request that named one keeps it" (some "todos:read")
-    (scopeIn (Authorization.withDefaultScopes [("client_id", "x"), ("scope", "todos:read")]))
-  checkEq "and one that named none is read as asking for all of them" everything
-    (scopeIn (Authorization.withDefaultScopes [("client_id", "x")]))
-  -- Present and blank is the same request as absent, and a client that sends it is not rare.
-  for blank in ["", " "] do
-    checkEq s!"as is one whose scope is {repr blank}" everything
-      (scopeIn (Authorization.withDefaultScopes [("client_id", "x"), ("scope", blank)]))
-
 /-- What the document offers and what the server will do have to agree.
 
 Nothing here fetches a client's metadata document, so a client told it may use a URL as its
@@ -274,6 +256,27 @@ private def somePrompt (loopbackOnly : Bool := false) : Authorization.Prompt :=
     requestedScopes := [Authorization.read, Authorization.write]
     grantedScopes := [] }
 
+/-- A client that names no scopes is asked about everything on offer, rather than about nothing.
+
+A prompt with nothing on it is a page with no boxes, and the only answer such a page can carry is
+an approval of nothing, which `conclude` reads as a refusal. So without a default a client that
+named no scopes could never get in at all, and agents that name none are common. What is offered
+is a default; the person still decides.
+
+The request itself is left alone. Amending the prompt is offering a default; amending the request
+would be recording that the client asked for something it did not. -/
+private def testAClientThatNamesNoScopesIsAskedAboutEverything : IO Unit := do
+  let named : Authorization.Prompt := { somePrompt with requestedScopes := [Authorization.read] }
+  let unnamed : Authorization.Prompt :=
+    { somePrompt with
+        requestedScopes := [], request := { somePrompt.request with scopes := [] } }
+  checkEq "a client that named one is asked about that one" [Authorization.read]
+    (Authorization.withDefaultScopes named).requestedScopes
+  checkEq "and one that named none is asked about all of them" Authorization.scopes
+    (Authorization.withDefaultScopes unnamed).requestedScopes
+  checkEq "without the request being rewritten to claim it asked" []
+    (Authorization.withDefaultScopes unnamed).request.scopes
+
 /-- Everything the MCP authorization specification requires be displayed is displayed, and the
 name the client gave itself is never the only thing shown: a name is a string it chose, and the
 host beside it is not. -/
@@ -409,7 +412,7 @@ def runMcpTests : IO Unit := do
   testTheResourceDocumentIsWhereAClientLooksFirst
   testATokenThatReachesNothingIsRefusedRatherThanServedNothing
   testTheServerOffersNoWayInThatEndsInARefusal
-  testAClientThatNamesNoScopesAsksForEverything
+  testAClientThatNamesNoScopesIsAskedAboutEverything
   testATokenIsRequired
   testAFullTokenReachesEveryTool
   testAReadOnlyTokenReachesOnlyTheReadingTools

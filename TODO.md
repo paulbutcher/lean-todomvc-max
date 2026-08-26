@@ -41,12 +41,10 @@ written to remove is gone: the `token` guard, the `decisionFor` guard, the `meta
 the `noDocuments` port. `disconnect` now uses `Service.connections`, so it is account-scoped and
 its count is true.
 
-- **Decide how the default scope set is expressed.** `withDefaultScopes` rewrites the `scope`
-  parameter before `authorize` sees it, so the recorded request claims the client asked for
-  something it did not. `v0.10.0`'s `ConsentPrompt.answered` is built for this case instead: amend
-  `requestedScopes` on the prompt and the code is bound to what was displayed. The behaviours
-  differ on a reconnecting scopeless client, which the first silently re-approves and the second
-  asks again.
+- `withDefaultScopes` now amends the prompt rather than the request, on `ConsentPrompt.answered`.
+  One consequence to watch: a scopeless request is covered by no standing consent, so such a
+  client is asked again on every re-authorization, and a scopeless `prompt=none` request can only
+  ever answer `consent_required`. Neither matters until a headless client appears here.
 
 ## Other libraries
 

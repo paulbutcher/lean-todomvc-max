@@ -161,31 +161,33 @@ def describing (base : BaseUrl) : Site :=
     verify := fun _ => pure (.error .unknown)
     disconnect := fun _ => pure 0 }
 
-/-- What a client that named no scopes is taken to have asked for.
+/-- What a client that named no scopes is asked about.
 
 OAuth 2.1 §3.2.2.1 leaves a server two answers to a request carrying no `scope`: a default, or a
-refusal. Granting nothing is neither, and it is the one that looks like success. The client is
-issued a token, the person is asked nothing because there is nothing to ask, and every tool the
-token reaches is filtered away, so what arrives is a connection with no tools on it and nothing
-anywhere saying why. Agents that name no scopes are the common case rather than the odd one.
+refusal. The library supplies the refusal and leaves the default here, because what is on offer
+is this deployment's to say. Agents that name no scopes are common rather than odd, so without a
+default they would all be turned away.
 
-The default is everything on offer, which is not the same as granting it: the consent page still
-asks, and a box unticked there is a scope withheld.
+Amending the prompt rather than the request it came from is the difference between offering a
+default and pretending one was asked for. `ConsentPrompt.answered` carries the amendment into the
+code, so what is issued matches what the page displayed, while `prompt.request` still records
+what the client actually sent.
 
-A `scope` that is present and blank counts as absent. It is the same request in every way that
-matters, and the difference between naming nothing and naming no scopes is not one a person
-consenting could be shown. -/
-def withDefaultScopes (params : Params) : Params :=
-  let named := params.any fun (name, value) => name == "scope" && !value.trimAscii.isEmpty
-  if named then params
-  else (params.filter (·.1 != "scope"))
-    ++ [("scope", String.intercalate " " (scopes.map (·.value)))]
+The default is everything on offer, which is not the same as granting it: the page still asks,
+and a box unticked there is a scope withheld. -/
+def withDefaultScopes (prompt : Prompt) : Prompt :=
+  if prompt.requestedScopes.isEmpty then { prompt with requestedScopes := scopes } else prompt
 
 def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
   let config := Authorization.config base
   { describing base with
-    authorize := fun params session =>
-      OAuth.Service.authorize ports config (withDefaultScopes params) (session.map (⟨·⟩))
+    -- Amended here rather than in the handler so that both the page and the answer to it see the
+    -- same prompt: the handler runs `authorize` again on the way through, which is what re-reads
+    -- the request rather than reassembling it from hidden fields.
+    authorize := fun params session => do
+      match ← OAuth.Service.authorize ports config params (session.map (⟨·⟩)) with
+      | .consent prompt => pure (.consent (withDefaultScopes prompt))
+      | settled => pure settled
     conclude := OAuth.Service.conclude ports config
     token := OAuth.Service.token ports config
     register := fun body => do
