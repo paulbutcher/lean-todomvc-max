@@ -43,7 +43,12 @@ private def withHeader (response : Response Body.Any) (name : Header.Name) (valu
 /-- The request as it was addressed, parameters included. Whether the parameters matter depends
 on what they are for: a page keeps none, and an authorization request is nothing without them, so
 carrying them is what lets one survive a detour through signing in. The allowlist is matched
-against the path alone, so nothing here can widen what a `returnTo` may name. -/
+against the path alone, so nothing here can widen what a `returnTo` may name.
+
+The one reader left that takes its parameters from the extension rather than from `withParams`,
+because this runs for a request with no session on any route, which is outside it. Losing the
+query here costs a redirect back to a less specific page; refusing to redirect at all would cost
+the sign-in. -/
 def target (req : Request Body.Stream) : String :=
   let path := toString req.line.uri.path
   match (req.extensions.get Params).map (·.query) with
@@ -121,23 +126,21 @@ def editHandler (store : Store) (account : Account) (id : Nat) (req : Request Bo
   | some item => Node.render (itemEditView item) |> Response.ok.html
   | none => "Not Found" |> Response.notFound.text
 
-def title? (req : Request Body.Stream) : Option String :=
-  (req.extensions.get Params).bind (·.get "title")
+def title? (params : Params) : Option String := params.get "title"
 
 /-- How many of the turn's mutations the fragment that sent this poll was drawn against. Missing
 or unreadable reads as none, which costs a redundant refresh rather than a missed one. -/
-def seen? (req : Request Body.Stream) : Nat :=
-  (((req.extensions.get Params).bind (·.get "seen")).bind (·.toNat?)).getD 0
+def seen? (params : Params) : Nat := ((params.get "seen").bind (·.toNat?)).getD 0
 
-def addHandler (store : Store) (account : Account) (req : Request Body.Stream) :
-    ContextAsync (Response Body.Any) := do
-  match title? req with
+def addHandler (store : Store) (account : Account) (params : Params)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  match title? params with
   | some title => (store.add account title).run (parentSpan req); renderMutation store account req
   | none => "Missing title" |> Response.badRequest.text
 
-def saveHandler (store : Store) (account : Account) (id : Nat) (req : Request Body.Stream) :
-    ContextAsync (Response Body.Any) := do
-  match title? req with
+def saveHandler (store : Store) (account : Account) (id : Nat) (params : Params)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  match title? params with
   | some title =>
     (store.setTitle account (Int64.ofNat id) title).run (parentSpan req)
     renderMutation store account req
@@ -165,8 +168,7 @@ def clearCompletedHandler (store : Store) (account : Account) (req : Request Bod
 
 /-- The digest the fragment that sent this poll was drawn against. Missing or unreadable matches
 no list, which costs a redundant refresh rather than a missed one. -/
-def seenDigest (req : Request Body.Stream) : String :=
-  (((req.extensions.get Params).bind (·.get "seen"))).getD ""
+def seenDigest (params : Params) : String := (params.get "seen").getD ""
 
 /-- Answers the page's standing question of whether the list it is showing is still the list the
 store holds, and says nothing at all when it is.
@@ -178,11 +180,11 @@ the assistant's own poll runs only while a turn is in flight.
 Answering with the list only when the digest has moved is not an optimisation. An unprompted swap
 discards a todo somebody is part-way through editing inline, so a poll that refreshed on every
 tick would make inline editing impossible to finish. -/
-def listStatusHandler (store : Store) (account : Account) (req : Request Body.Stream) :
-    ContextAsync (Response Body.Any) := do
+def listStatusHandler (store : Store) (account : Account) (params : Params)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let parent := parentSpan req
   let allItems ← (store.list account .all).run parent
-  if listDigest allItems == seenDigest req then
+  if listDigest allItems == seenDigest params then
     "" |> Response.ok.html
   else
     let filter := currentFilter req
@@ -229,9 +231,8 @@ def signOutHandler (identity : Identity) (account : Account) (req : Request Body
 
 /-! ## The assistant panel -/
 
-def prompt? (req : Request Body.Stream) : Option String :=
-  ((req.extensions.get Params).bind (·.get "prompt")).map (·.trimAscii.toString)
-    |>.filter (!·.isEmpty)
+def prompt? (params : Params) : Option String :=
+  (params.get "prompt").map (·.trimAscii.toString) |>.filter (!·.isEmpty)
 
 /-- The panel's transcript, which is what every route below answers with: each of them changes
 what the conversation is and then shows what it has become, so none of them needs a reply shape
@@ -252,9 +253,9 @@ already showing the turn that is running.
 
 A blank prompt is not a turn. It re-renders, which is what an empty send should look like. -/
 def chatHandler (store : Store) (assistant : Assistant) (account : Account)
-    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+    (params : Params) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let parent := parentSpan req
-  if let some prompt := prompt? req then
+  if let some prompt := prompt? params then
     if ← (assistant.turns.claim account : IO _) then
       (assistant.chat.append account #[.user prompt]).run parent
       (startTurn assistant store account parent : IO Unit)
@@ -282,7 +283,7 @@ has already stopped asking; leaving it would report the same failure against eve
 `Async.sleep` rather than blocking: this is a fiber sharing its thread with every other request in
 flight, and holding the thread for the wait would stall all of them. -/
 def chatStatusHandler (store : Store) (assistant : Assistant) (account : Account)
-    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+    (params : Params) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let mut turn ← (assistant.turns.get account : IO _)
   for _ in [0:pollWait] do
     if !turn.any (·.phase.isRunning) then break
@@ -295,7 +296,7 @@ def chatStatusHandler (store : Store) (assistant : Assistant) (account : Account
   -- Refreshing once more than strictly needed costs a swap; refreshing once too few leaves the
   -- person looking at a list that disagrees with what the assistant says it did.
   let ended := !turn.any (·.phase.isRunning)
-  let moved := turn.any (·.mutations > seen? req)
+  let moved := turn.any (·.mutations > seen? params)
   if turn.any (!·.phase.isRunning) then (assistant.turns.finish account : IO Unit)
   let conversation := Node.render (conversationView messages turn)
   let refresh ← if ended || moved then listRefresh store account req else pure ""
@@ -339,11 +340,11 @@ private def refused (refusal : Authorization.Refusal) : ContextAsync (Response B
 authorization request in the query string, the token and registration requests in the body. They
 are read apart rather than merged, because a token request that took a parameter from the query
 would read one the client did not sign up to send there. -/
-private def queryParams (req : Request Body.Stream) : Authorization.Params :=
-  ((req.extensions.get Params).map (Authorization.params ·.query)).getD []
+private def queryParams (params : Params) : Authorization.Params :=
+  Authorization.params params.query
 
-private def formParams (req : Request Body.Stream) : Authorization.Params :=
-  ((req.extensions.get Params).map (Authorization.params ·.form)).getD []
+private def formParams (params : Params) : Authorization.Params :=
+  Authorization.params params.form
 
 def metadataHandler (site : Authorization.Site) (_req : Request Body.Stream) :
     ContextAsync (Response Body.Any) :=
@@ -375,11 +376,10 @@ Anything but `allow` is a refusal, which is what makes the deny button ordinary 
 special: a submission that reaches here without saying `allow` has not granted anything. So is
 allowing with every box unticked, which `conclude` settles: an approval narrowing to nothing is
 the same answer as denying. -/
-private def decisionFor (req : Request Body.Stream) (prompt : Authorization.Prompt) :
+private def decisionFor (params : Params) (prompt : Authorization.Prompt) :
     Authorization.Decision :=
-  let ticked (scope : Authorization.Scope) : Bool :=
-    ((req.extensions.get Params).bind (·.get (approvalField scope))).isSome
-  if (req.extensions.get Params).bind (·.get "decision") == some "allow" then
+  let ticked (scope : Authorization.Scope) : Bool := (params.get (approvalField scope)).isSome
+  if params.get "decision" == some "allow" then
     .granted prompt (prompt.requestedScopes.filter ticked)
   else
     .denied prompt
@@ -395,8 +395,8 @@ Unlike every other route a browser reaches, this one is not behind `guarded`. Wh
 with no session should sign somebody in, refuse, or redirect an error to the client is the
 authorization server's answer to give, and `prompt=none` is a case where sending the browser to
 a sign-in page would be wrong. -/
-def authorizeHandler (site : Authorization.Site) (req : Request Body.Stream) :
-    ContextAsync (Response Body.Any) := do
+def authorizeHandler (site : Authorization.Site) (params : Params)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let session := (req.extensions.get Cookies).bind (·.get Auth.sessionCookie)
   -- What a client asked for, said out loud. An agent that reaches the end of this flow holding a
   -- token that names no scope arrives at the MCP endpoint to find no tools and nothing to read,
@@ -404,7 +404,7 @@ def authorizeHandler (site : Authorization.Site) (req : Request Body.Stream) :
   -- not the query.
   (Telemetry.info "authorization requested"
     [ ("oauth.scope_requested",
-        .str ((queryParams req |>.find? (·.1 == "scope")).map (·.2) |>.getD "<absent>")) ]
+        .str ((queryParams params |>.find? (·.1 == "scope")).map (·.2) |>.getD "<absent>")) ]
     : TelemetryT Async Unit).run (parentSpan req)
   settle req
     (fun prompt => do
@@ -412,15 +412,15 @@ def authorizeHandler (site : Authorization.Site) (req : Request Body.Stream) :
         -- `conclude` answers with a redirect or a refusal and never asks again, so reaching the
         -- consent branch here would mean the library had changed under this code.
         settle req (fun _ => refusedClientPage "" |> Response.internalServerError.html)
-          (← (site.conclude (decisionFor req prompt) : IO _))
+          (← (site.conclude (decisionFor params prompt) : IO _))
       else
         consentPage prompt (target req) ((req.extensions.get AntiForgeryToken).map (·.value))
           |> Response.ok.html)
-    (← (site.authorize (queryParams req) session : IO _))
+    (← (site.authorize (queryParams params) session : IO _))
 
-def tokenHandler (site : Authorization.Site) (req : Request Body.Stream) :
-    ContextAsync (Response Body.Any) := do
-  match ← (site.token (formParams req) : IO _) with
+def tokenHandler (site : Authorization.Site) (params : Params)
+    (_req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  match ← (site.token (formParams params) : IO _) with
   | .ok tokens => jsonResponse 200 tokens.toJson
   | .error refusal => refused refusal
 
@@ -495,6 +495,20 @@ private def guarded (identity : Identity)
   | some account => handler account req
   | none => toSignIn req
 
+/-- Hands a handler what was parsed, rather than leaving it to ask.
+
+`params` runs in front of every route, so a request arriving without it is a stack assembled
+wrongly and not a request that carried nothing. Read out of the extension, those are the same
+`none`: a handler cannot tell a form it never parsed from a form with nothing in it, and answers
+as though the field were absent. Which is silent, and wrong in whichever direction the field
+mattered. -/
+private def withParams
+    (handler : Params → Request Body.Stream → ContextAsync (Response Body.Any)) :
+    Request Body.Stream → ContextAsync (Response Body.Any) := fun req =>
+  match req.extensions.get Params with
+  | some params => handler params req
+  | none => "nothing parsed this request's parameters" |> Response.internalServerError.text
+
 def app (identity : Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site) : StatelessHandler :=
   let byId (handler : Store → Account → Nat → Request Body.Stream →
@@ -504,10 +518,12 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
     .get patterns.index (guarded identity (pageHandler .all store assistant identity)),
     .get patterns.active (guarded identity (pageHandler .active store assistant identity)),
     .get patterns.completed (guarded identity (pageHandler .completed store assistant identity)),
-    .post patterns.todos (guarded identity (addHandler store)),
-    .get patterns.todosStatus (guarded identity (listStatusHandler store)),
+    .post patterns.todos (guarded identity fun account => withParams (addHandler store account)),
+    .get patterns.todosStatus
+      (guarded identity fun account => withParams (listStatusHandler store account)),
     .get patterns.edit (byId editHandler),
-    .put patterns.todo (byId saveHandler),
+    .put patterns.todo (fun id =>
+      guarded identity fun account => withParams (saveHandler store account id)),
     .post patterns.toggle (byId toggleHandler),
     .delete patterns.todo (byId deleteHandler),
     .post patterns.toggleAll (guarded identity (toggleAllHandler store)),
@@ -515,13 +531,15 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
     .post patterns.signOut (guarded identity (signOutHandler identity)),
     .get patterns.connect (guarded identity (connectHandler authorization)),
     .post patterns.disconnect (guarded identity (disconnectHandler authorization)),
-    .post patterns.chat (guarded identity (chatHandler store assistant)),
-    .get patterns.chatStatus (guarded identity (chatStatusHandler store assistant)),
+    .post patterns.chat
+      (guarded identity fun account => withParams (chatHandler store assistant account)),
+    .get patterns.chatStatus
+      (guarded identity fun account => withParams (chatStatusHandler store assistant account)),
     .delete patterns.chat (guarded identity (chatResetHandler assistant)),
     -- Here rather than beside the machine-facing endpoints because this is the one a person
     -- answers, and answering it has to be protected from another site posting the answer.
-    .get patterns.oauthAuthorize (authorizeHandler authorization),
-    .post patterns.oauthAuthorize (authorizeHandler authorization)
+    .get patterns.oauthAuthorize (withParams (authorizeHandler authorization)),
+    .post patterns.oauthAuthorize (withParams (authorizeHandler authorization))
   ]
 
 /-- The sign-in routes carry an anti-forgery token of their own, derived from the attempt cookie
@@ -573,7 +591,7 @@ def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (st
     [ .post patterns.mcp (mcpHandler store authorization),
       .get patterns.mcp (mcpHandler store authorization),
       .delete patterns.mcp (mcpHandler store authorization),
-      .post patterns.oauthToken (tokenHandler authorization),
+      .post patterns.oauthToken (withParams (tokenHandler authorization)),
       .post patterns.oauthRegister (registerHandler authorization),
       .get patterns.oauthMetadata (metadataHandler authorization),
       .get patterns.mcpMetadata (resourceMetadataHandler authorization),

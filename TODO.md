@@ -56,9 +56,6 @@ its count is true.
 
 ## This repo
 
-- **`withParams` combinator** mirroring `guarded`: handlers take `Params`, absence answers 500.
-  Absent middleware and absent field are different facts and currently both read as false. Half an
-  hour, deletes code.
 - **Harness helper for full-stack form posts**: GET to mint the anti-forgery token, harvest cookie
   and token, POST. Without it a test can drive a partial stack and pass vacuously, which one of
   mine did.

@@ -57,13 +57,18 @@ private def testEditingAnItemThatIsGone : IO Unit := do
   check "GET /todos/99/edit" (mkGetClose "/todos/99/edit") (← handlerOf #[active])
     fun response => assertStatus response "HTTP/1.1 404"
 
-/-- A request that arrives without a parsed `title` is refused rather than creating an item with
-no title, so a missing or unparsed form body can't reach storage. -/
+/-- A form carrying no `title` is refused rather than creating an item with no title.
+
+Posted through `params`, so that what is being refused is an empty form rather than an absent
+parser. Without it the handler cannot tell the two apart, which is the reading `withParams`
+exists to remove and which made this test pass for the wrong reason. -/
 private def testCreateWithoutATitle : IO Unit := do
   let store ← memoryStore alice #[]
-  check "POST /todos" (mkPost "/todos" "" "Connection: close\x0d\n")
-    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
-      noGrants).onRequest
+  check "POST /todos"
+    (mkPost "/todos" "" "Content-Type: application/x-www-form-urlencoded\x0d\nConnection: close\x0d\n")
+    (Middleware.apply [Middleware.params]
+      (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
+        noGrants)).onRequest
     fun response => do
       assertStatus response "HTTP/1.1 400"
   checkEq "nothing was created" (0 : Nat)
