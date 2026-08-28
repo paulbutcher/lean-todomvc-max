@@ -45,6 +45,8 @@ Applies to comments, documentation, CLAUDE.md itself, and replies.
 - State the rule. Give the reason only where it would otherwise look arbitrary or be misapplied.
 - A new section is at most five bullets of one or two lines. More than that is more than one
   rule, and they are not all worth keeping.
+- Check the text as written, not the intention it was written with: inside the cap, and no
+  sentence restating an earlier one.
 
 ## Environment
 
@@ -106,6 +108,8 @@ Applies to comments, documentation, CLAUDE.md itself, and replies.
 - Never use a partial function unless it's absolutely essential.
 - Never use a function which might panic (typically indicated by an exclamation mark at
   the end of the function name) unless it's absolution essential.
+- An `Option` whose `none` can mean "misconfigured" must not default into a value meaning
+  "nothing was asked for". Collapsing them makes a broken server answer wrongly and silently.
 
 ## Logging
 

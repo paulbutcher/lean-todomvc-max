@@ -476,9 +476,6 @@ def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.S
         (parentSpan req)
       refuse site (.insufficientScope Authorization.scopes)
     else do
-      (Telemetry.info "mcp call authorized"
-        [("oauth.scope_held", .str (String.intercalate " " (claims.scopes.map (·.value))))]
-        : TelemetryT Async Unit).run (parentSpan req)
       let bytes ← MCP.StdHttp.collect req.body
       let served ← (MCP.serve Mcp.config (Mcp.server store claims.scopes) claims.account
         (MCP.StdHttp.requestOf req.line bytes)).run (parentSpan req)
