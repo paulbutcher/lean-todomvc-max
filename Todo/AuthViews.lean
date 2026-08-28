@@ -232,7 +232,7 @@ def consentPage (prompt : Authentication.OAuth.Service.ConsentPrompt Todo.tenant
                          { type := "checkbox", name := approvalField scope, value := "on",
                            checked := true, id := approvalField scope },
                        Html.label [Todo.Authorization.describe scope]
-                         { for_ := approvalField scope } ]) : Node .flow) ]
+                         { for_ := approvalField scope } ]) { class_ := "scopes" } : Node .flow) ]
                ++ hidden ({} : Middleware.AntiForgeryOptions).paramName token
                ++ [ (button ["Allow"] { name := "decision", value := "allow" } : Node .flow),
                     (button ["Deny"] { name := "decision", value := "deny" } : Node .flow) ])

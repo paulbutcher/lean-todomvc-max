@@ -151,3 +151,40 @@ Released under Apache 2.0 license as described in the file LICENSE.
   padding-top: 20px;
   border-top: 1px solid #ededed;
 }
+
+/* Each scope is a choice, not an item in a list, so the marker goes and the label sits beside
+   its box rather than taking the block form the field captions above use. */
+.auth .scopes {
+  list-style: none;
+  margin: 0 0 16px;
+  padding-left: 0;
+}
+
+.auth .scopes li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.auth .scopes input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  accent-color: #b83f45;
+}
+
+.auth .scopes label {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Two answers side by side, which without this meet as one block of colour. */
+.auth button + button {
+  margin-left: 10px;
+}
