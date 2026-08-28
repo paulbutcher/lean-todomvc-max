@@ -48,14 +48,19 @@ its count is true.
 
 ## Other libraries
 
-Pinned at lean-middleware `v0.10.0`, which took `require-extension-spec.md`. The local
-`withParams` is gone in favour of `Middleware.withParams`.
+Pinned at lean-middleware `v0.10.0`, which took both specs written for it: handlers can require
+an extension, and `Params.get` looks a name up decoded. The local `withParams` is gone in favour
+of `Middleware.withParams`.
 
-- `params-encoded-lookup-spec.md` in this session's scratchpad, for lean-middleware `v0.10.0`:
-  `Std.Http`'s `URI.Query.findEncoded?` compares encoded bytes, and percent-encoding is not
-  canonical, so a browser's `%3A` never matches an encoder that leaves `:` alone.
-  `Middleware.Params.get` inherits it. The spec fixes it in middleware by comparing decoded names
-  and says why the upstream fix should be raised separately rather than waited on.
+- **Raised upstream** as [leanprover/lean4#14934][]: `URI.Query` lookups compare percent-encoded
+  bytes, which are not canonical, so the same mismatch waits for anyone using `Query.get`, `getD`,
+  `findAll`, `contains` or `erase` directly. lean-middleware works around it rather than
+  inheriting it, so nothing here is blocked. If it lands, `Middleware.Params.lookup` can go back
+  to delegating.
+
+[leanprover/lean4#14934]: https://github.com/leanprover/lean4/issues/14934
+- `approvalField` keeps its base64url. It is no longer a workaround: a scope is an opaque string
+  the client chose, and encoding puts the field name beyond that choice.
 
 ## This repo
 

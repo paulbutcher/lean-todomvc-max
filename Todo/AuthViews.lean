@@ -171,12 +171,9 @@ private def claimedName (name : String) : String :=
 /-- The field name a scope's checkbox carries. One name per scope rather than one repeated name,
 so each is read back with an ordinary single-valued lookup.
 
-Encoded rather than the scope's own text, because a form field is matched by the bytes it comes
-back as. A browser serialising `application/x-www-form-urlencoded` escapes everything outside
-`A-Za-z0-9*-._`, so a scope named `todos:read` returns as `approve-todos%3Aread`, and a lookup
-that encodes `:` as itself never matches it. What the scope contains is the client's choice, not
-this application's, so the name is put beyond that choice rather than trusted to stay inside it.
--/
+Encoded rather than the scope's own text. A scope is an opaque string the client chose, and this
+puts the field name beyond that choice: whatever is in it, what reaches the form is a name of
+`A-Za-z0-9_-` that needs no escaping and stays distinct from every other scope's. -/
 def approvalField (scope : Authentication.OAuth.Scope) : String :=
   "approve-" ++ Codec.Base64Url.encodeString scope.value.toUTF8
 

@@ -336,13 +336,13 @@ private def testEachScopeIsItsOwnAnswer : IO Unit := do
     checkEq s!"{scope.value} has a box" true
       (mentions page (approvalField scope))
 
-/-- A form field is matched by the bytes it comes back as, so its name has to be one a browser
-returns unchanged.
+/-- A scope's field name needs no escaping and belongs to that scope alone, whatever the scope is
+called.
 
-`application/x-www-form-urlencoded` escapes everything outside this set, and a lookup that
-encodes a character as itself never matches the escape a browser sent instead. What a scope is
-called is the client's choice, so the test is over any scope a client could ask for rather than
-over the two this server offers. -/
+What a scope is called is the client's choice, so the test is over any scope a client could ask
+for rather than over the two this server offers: a name carrying a space or a `%` would still be
+read back correctly, but only one that also stayed distinct would be read back as the right
+scope. -/
 private def testAnApprovalFieldSurvivesBeingPostedByABrowser : IO Unit := do
   let unescaped (c : Char) : Bool :=
     c.isAlphanum || c == '*' || c == '-' || c == '.' || c == '_'
