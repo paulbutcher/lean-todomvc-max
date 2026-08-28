@@ -495,20 +495,6 @@ private def guarded (identity : Identity)
   | some account => handler account req
   | none => toSignIn req
 
-/-- Hands a handler what was parsed, rather than leaving it to ask.
-
-`params` runs in front of every route, so a request arriving without it is a stack assembled
-wrongly and not a request that carried nothing. Read out of the extension, those are the same
-`none`: a handler cannot tell a form it never parsed from a form with nothing in it, and answers
-as though the field were absent. Which is silent, and wrong in whichever direction the field
-mattered. -/
-private def withParams
-    (handler : Params → Request Body.Stream → ContextAsync (Response Body.Any)) :
-    Request Body.Stream → ContextAsync (Response Body.Any) := fun req =>
-  match req.extensions.get Params with
-  | some params => handler params req
-  | none => "nothing parsed this request's parameters" |> Response.internalServerError.text
-
 def app (identity : Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site) : StatelessHandler :=
   let byId (handler : Store → Account → Nat → Request Body.Stream →

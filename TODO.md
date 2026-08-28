@@ -48,7 +48,10 @@ its count is true.
 
 ## Other libraries
 
-- `params-encoded-lookup-spec.md` in this session's scratchpad, for lean-middleware `v0.9.0`:
+Pinned at lean-middleware `v0.10.0`, which took `require-extension-spec.md`. The local
+`withParams` is gone in favour of `Middleware.withParams`.
+
+- `params-encoded-lookup-spec.md` in this session's scratchpad, for lean-middleware `v0.10.0`:
   `Std.Http`'s `URI.Query.findEncoded?` compares encoded bytes, and percent-encoding is not
   canonical, so a browser's `%3A` never matches an encoder that leaves `:` alone.
   `Middleware.Params.get` inherits it. The spec fixes it in middleware by comparing decoded names
