@@ -4,9 +4,6 @@ Open items only. Anything settled has gone to the code, a comment, or a commit m
 
 ## This repo
 
-- **Put the refusal reason in the response body.** A JSON-RPC error naming the scopes needed
-  survives where the `WWW-Authenticate` header does not, and is what a client refused for scope
-  has to read to know what to ask for.
 - **Harness helper for full-stack form posts**: GET to mint the anti-forgery token, harvest cookie
   and token, POST. Without it a test can drive a partial stack and pass vacuously, which one of
   mine did.

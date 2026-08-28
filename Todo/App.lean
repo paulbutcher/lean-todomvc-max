@@ -441,12 +441,16 @@ def registerHandler (site : Authorization.Site) (req : Request Body.Stream) :
 
 /-- A refusal that says where to go and ask for a token, which is the whole of how an agent
 holding nothing finds its way in: RFC 9728 puts the resource's own metadata document behind
-`resource_metadata`, and that document names the authorization server. -/
+`resource_metadata`, and that document names the authorization server.
+
+Said twice, in the header and in the body, because the header does not always survive the way
+out. What a refusal costs when it says nothing is a client that reconnects forever against a
+grant it cannot know is wrong. -/
 private def refuse (site : Authorization.Site) (rejection : Authorization.Rejection) :
     ContextAsync (Response Body.Any) := do
-  let (status, challenge) := site.challenge rejection
-  let response ← Response.withStatus (statusOf status) |>.text "Unauthorized"
-  pure (withHeader response (Header.Name.mk "www-authenticate") challenge)
+  let challenge := site.challenge rejection
+  let response ← jsonResponse challenge.status challenge.document
+  pure (withHeader response (Header.Name.mk "www-authenticate") challenge.header)
 
 /-- Every tool the panel's model has, offered to whatever agent the person brought, as whoever
 granted the token it presents and narrowed to what they granted.

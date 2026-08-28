@@ -169,6 +169,34 @@ private def testATokenThatReachesNothingIsRefusedRatherThanServedNothing : IO Un
       for scope in Authorization.scopes do
         assertContains response scope.value
 
+/-- A refusal says why in its body as well as its header.
+
+A Lambda function URL renames `WWW-Authenticate` on the way out and nothing configures that away,
+so a deployment can refuse correctly and still tell the client nothing. The body is the half that
+arrives. Read here rather than off the response, because both carry the same strings and a check
+on the response could not tell which of them it had found.
+
+The header is the library's and the document is this application's, so the last assertion is what
+catches them drifting apart about what a refusal is called. -/
+private def testARefusalSaysWhyInItsBodyToo : IO Unit := do
+  let cases : List (Authorization.Rejection × String × Nat) :=
+    [ (.unknown, "invalid_token", 401),
+      (.insufficientScope Authorization.scopes, "insufficient_scope", 403) ]
+  for (rejection, code, status) in cases do
+    let refused := Authorization.challengeFor testBase rejection
+    let document := Json.compress refused.document
+    checkEq s!"{code} carries the status RFC 6750 gives it" status refused.status
+    checkEq s!"the document names {code}" true (mentions document code)
+    checkEq "and where to go for a token" true
+      (mentions document (Authorization.metadataUrl testBase))
+    checkEq s!"and the header agrees it is {code}" true (mentions refused.header code)
+  -- Naming them is the whole point of the scope case: a client refused without being told what to
+  -- ask for has nothing to come back with.
+  let narrowed := Authorization.challengeFor testBase (.insufficientScope Authorization.scopes)
+  for scope in Authorization.scopes do
+    checkEq s!"the document names {scope.value}" true
+      (mentions (Json.compress narrowed.document) scope.value)
+
 /-- RFC 9728 puts the resource's path into the well-known URL, and that is the form a client
 tries first: a 404 there costs it the document unless it also tries the shorter one. -/
 private def testTheResourceDocumentIsWhereAClientLooksFirst : IO Unit := do
@@ -440,6 +468,7 @@ def runMcpTests : IO Unit := do
   testDiscoveryNeedsNoCredential
   testTheResourceDocumentIsWhereAClientLooksFirst
   testATokenThatReachesNothingIsRefusedRatherThanServedNothing
+  testARefusalSaysWhyInItsBodyToo
   testTheServerOffersNoWayInThatEndsInARefusal
   testAClientThatNamesNoScopesIsAskedAboutEverything
   testATokenIsRequired

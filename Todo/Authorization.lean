@@ -106,12 +106,42 @@ abbrev Refusal := OAuth.ErrorResponse
 abbrev Rejection := OAuth.AccessToken.Rejection
 abbrev Claims := OAuth.Service.TokenClaims Todo.tenant
 
-/-- The status RFC 6750 gives a rejection, and the `WWW-Authenticate` value that goes with it.
-The value carries the address of the protected resource metadata document, which is how an agent
-holding nothing gets from a 401 to a token. -/
-def challengeFor (base : BaseUrl) (rejection : Rejection) : Nat × String :=
-  (OAuth.Service.rejectionStatus rejection,
-   OAuth.Service.challenge rejection (some (metadataUrl base)))
+/-- Everything a refusal at the MCP endpoint answers with. -/
+structure Challenge where
+  status : Nat
+  /-- The `WWW-Authenticate` value RFC 6750 §3 asks for. -/
+  header : String
+  /-- The same refusal as a document, because a header is not always what arrives. A Lambda
+  function URL renames `WWW-Authenticate`, and there is no setting that stops it, so a deployment
+  can be correct and still refuse without saying why. The body is ours all the way to the client.
+  -/
+  document : Json
+
+/-- How a rejection reads to whoever is refused: the code RFC 6750 §3.1 gives it, and a sentence
+about this server rather than about the protocol. -/
+private def reasonFor : Rejection → String × String
+  | .unknown => ("invalid_token", "this server did not issue that token, or no longer knows it")
+  | .expired => ("invalid_token", "the token has expired; refresh it or ask again")
+  | .revoked => ("invalid_token", "the token was revoked; ask again")
+  | .wrongAudience => ("invalid_token", "the token was issued for a different resource")
+  | .insufficientScope _ =>
+    ("insufficient_scope", "the token was not granted the scopes this endpoint needs")
+
+/-- The document carries `resource_metadata` for the same reason the header does: it is how an
+agent holding nothing gets from a refusal to a token, and it is the part that a renamed header
+loses. `scope` names everything needed at once, so a client comes back for all of it rather than
+once per scope. -/
+def challengeFor (base : BaseUrl) (rejection : Rejection) : Challenge :=
+  let (error, description) := reasonFor rejection
+  { status := OAuth.Service.rejectionStatus rejection
+    header := OAuth.Service.challenge rejection (some (metadataUrl base))
+    document := Json.mkObj
+      ([ ("error", .str error),
+         ("error_description", .str description),
+         ("resource_metadata", .str (metadataUrl base)) ]
+        ++ match rejection with
+           | .insufficientScope needed => [("scope", .str (OAuth.Scope.render needed))]
+           | _ => []) }
 
 /-! ## Wiring -/
 
@@ -145,7 +175,7 @@ structure Site where
   disconnect : Todo.Account → IO Nat
   /-- What a refusal at the MCP endpoint answers with, which is `challengeFor` at whatever this
   server's own address is. -/
-  challenge : Rejection → Nat × String
+  challenge : Rejection → Challenge
 
 /-- Everything that is settled by the address alone, so that anything
 standing in for the operations still answers these the way a deployment would. -/
