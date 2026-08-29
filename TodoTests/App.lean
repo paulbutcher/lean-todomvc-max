@@ -59,18 +59,14 @@ private def testEditingAnItemThatIsGone : IO Unit := do
 
 /-- A form carrying no `title` is refused rather than creating an item with no title.
 
-Posted through `params`, so that what is being refused is an empty form rather than an absent
-parser. Without it the handler cannot tell the two apart, which is the reading `withParams`
-exists to remove and which made this test pass for the wrong reason. -/
+Posted by a browser, so that what is being refused is an empty form rather than an absent parser.
+Without the parser the handler cannot tell the two apart, which is the reading `withParams` exists
+to remove and which made this test pass for the wrong reason. -/
 private def testCreateWithoutATitle : IO Unit := do
   let store ← memoryStore alice #[]
-  check "POST /todos"
-    (mkPost "/todos" "" "Content-Type: application/x-www-form-urlencoded\x0d\nConnection: close\x0d\n")
-    (Middleware.apply [Middleware.params]
-      (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
-        noGrants)).onRequest
-    fun response => do
-      assertStatus response "HTTP/1.1 400"
+  let browser ← browserFor store
+  discard <| browser.get Routes.links.index
+  assertStatus (← browser.post Routes.links.todos [] (placement := .header)) "HTTP/1.1 400"
   checkEq "nothing was created" (0 : Nat)
     (← Async.block (runTelemetry (store.list alice .all))).size
 
@@ -187,7 +183,11 @@ private def testTheConnectPageOffersAWayToWithdrawApprovals : IO Unit := do
     fun response => assertContains response Routes.links.disconnect
 
 /-- And asking withdraws for whoever asked. An account is what a grant belongs to, so a button
-that withdrew for anybody else would leave the one who pressed it exactly as stuck. -/
+that withdrew for anybody else would leave the one who pressed it exactly as stuck.
+
+Pressed by a browser, which is the only thing that establishes the button works at all: the form
+is a plain post rather than an HTMX one, so the page has to render the token into it, and a page
+that stopped doing so would leave this dead in every browser and every other test green. -/
 private def testDisconnectingWithdrawsForTheAccountThatAsked : IO Unit := do
   let asked ← IO.mkRef ([] : List String)
   let store ← memoryStore alice #[]
@@ -195,10 +195,9 @@ private def testDisconnectingWithdrawsForTheAccountThatAsked : IO Unit := do
     { noGrants with disconnect := fun account => do
         asked.modify (account.value :: ·)
         pure 3 }
-  check "POST /connect/disconnect" (mkPost Routes.links.disconnect "" "Connection: close\x0d\n")
-    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
-      authorization).onRequest
-    fun response => assertContains response "Disconnected"
+  let browser ← browserFor store authorization
+  discard <| browser.get Routes.links.connect
+  assertContains (← browser.post Routes.links.disconnect []) "Disconnected"
   checkEq "it withdrew for the account that asked" [alice.value] (← asked.get)
 
 def runAppTests : IO Unit :=

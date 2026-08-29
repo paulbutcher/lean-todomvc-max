@@ -399,24 +399,20 @@ private def testTheConsentFormSendsTheAnswerThatWasGiven : IO Unit := do
           | .granted _ scopes => some scopes
           | .denied _ => none))
         pure (.respond ⟨"https://agent.example/callback?done"⟩) }
-  -- The router under `params` alone, rather than the whole stack: reading the form is what is
-  -- being tested, and `antiForgery` stands in front of this route and would refuse a post
-  -- carrying no token, which is checked where that is the point.
-  let handler := (Middleware.apply [Middleware.params]
-    (Todo.app (fixedIdentity alice (← IO.mkRef 0)) store (← scriptedAssistant #[])
-      recording)).onRequest
-  let post (form : String) : IO (Option (Option (List Authorization.Scope))) := do
+  -- Answered by a browser, since a person is what answers this: the form only works if the page
+  -- renders the token into it, and the whole stack is the only thing that shows it does.
+  let browser ← browserFor store recording
+  discard <| browser.get links.oauthAuthorize
+  let post (fields : List (String × String)) :
+      IO (Option (Option (List Authorization.Scope))) := do
     seen.set none
-    check "POST /oauth/authorize"
-      (mkPost links.oauthAuthorize form
-        "Content-Type: application/x-www-form-urlencoded\x0d\nConnection: close\x0d\n")
-      handler (fun _ => pure ())
+    discard <| browser.post links.oauthAuthorize fields
     seen.get
-  checkEq "deny is a refusal" (some none) (← post "decision=deny")
+  checkEq "deny is a refusal" (some none) (← post [("decision", "deny")])
   checkEq "allow with nothing ticked approves nothing, which `conclude` refuses"
-    (some (some [])) (← post "decision=allow")
+    (some (some [])) (← post [("decision", "allow")])
   checkEq "a box that is ticked is granted" (some (some [Authorization.read]))
-    (← post s!"decision=allow&{approvalField Authorization.read}=on")
+    (← post [("decision", "allow"), (approvalField Authorization.read, "on")])
 
 /-! ## The list on the page catching up -/
 

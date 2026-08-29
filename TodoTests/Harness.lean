@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 module
 
+public import Middleware.Test.Browser
+public import Todo.App
 public import Todo.Auth
 public import Todo.Store
 public import Todo.ChatTurn
@@ -186,5 +188,30 @@ def awaitTurn (turns : Turns) (account : Account) (label : String)
     | some state => if state.phase.isRunning then IO.sleep 10 else return ()
     | none => return ()
   throw (IO.userError s!"{label}: the turn was still running after {attempts} attempts")
+
+/-! ## A browser -/
+
+/-- Where this application's pages carry their anti-forgery token.
+
+Two places, because the pages post two ways: `pageView` puts it in `hx-headers` on `<body>` for
+everything HTMX sends, and `/connect`, the consent page and the sign-in pages put it in a hidden
+field. The first is JSON inside an attribute, so its quotes arrive escaped and the escape is what
+terminates it; the second is what `Browser` reads by default. -/
+def pageToken (body : String) : Option String :=
+  (Middleware.Test.tokenBetween "X-CSRF-Token&quot;: &quot;" "&quot;" body).orElse fun _ =>
+    Middleware.Test.tokenAfter
+      s!"name=\"{({} : Middleware.AntiForgeryOptions).paramName}\" value=\"" body
+
+/-- A browser against the whole stack, for the tests that are about what a browser can do: fetch
+a page, then post the form on it. Driving less than this passes whether or not the page renders
+a token at all, and so whether or not the form works. -/
+def browserFor (store : Store) (authorization : Authorization.Site := noGrants)
+    (account : Account := alice) : IO Middleware.Test.Browser := do
+  let sessions ← Middleware.MemoryStore.new
+  let signIn : Std.Http.Server.StatelessHandler :=
+    { onRequest := fun _ => Std.Http.Response.notFound.text "no sign-in here" }
+  let handler := (Todo.server (fixedIdentity account (← IO.mkRef 0)) signIn store
+    (← scriptedAssistant #[]) sessions authorization).onRequest
+  Middleware.Test.Browser.new handler (tokenFrom := pageToken)
 
 end TodoTests

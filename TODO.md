@@ -4,9 +4,6 @@ Open items only. Anything settled has gone to the code, a comment, or a commit m
 
 ## This repo
 
-- **Harness helper for full-stack form posts**: GET to mint the anti-forgery token, harvest cookie
-  and token, POST. Without it a test can drive a partial stack and pass vacuously, which one of
-  mine did.
 - A copy button on `/connect` needs ~10 lines of JavaScript, left out under the no-JS rule.
 
 ## Deployment
