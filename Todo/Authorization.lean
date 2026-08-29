@@ -10,6 +10,7 @@ public import Authentication.Instances
 public import AuthenticationOAuth
 public import AuthenticationPostgres
 public import Postgres
+public import MCP
 public import Middleware
 public import Todo.Links
 public import Todo.Tenant
@@ -84,11 +85,10 @@ deliberately does not serve: it describes this resource, not that server.
 `authorization_servers` names ours and only ours. A client that finds several is entitled to pick
 one, and there is nothing to be gained here by offering a choice. -/
 def resourceMetadata (base : BaseUrl) : Json :=
-  Json.mkObj
-    [ ("resource", .str (resource base).value),
-      ("authorization_servers", .arr #[.str (config base).issuer]),
-      ("scopes_supported", .arr (scopes.map (Json.str ·.value)).toArray),
-      ("bearer_methods_supported", .arr #[.str "header"]) ]
+  MCP.ProtectedResourceMetadata.toJson
+    { resource := (resource base).value
+      authorizationServers := #[(config base).issuer]
+      scopesSupported := (scopes.map (·.value)).toArray }
 
 /-! ## What a handler deals in
 
