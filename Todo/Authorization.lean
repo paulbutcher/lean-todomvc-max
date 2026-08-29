@@ -57,12 +57,8 @@ else is refused here however valid it is, which is the check the MCP specificati
 emphatic about. -/
 def resource (base : BaseUrl) : OAuth.ResourceIndicator := ⟨origin base ++ links.mcp⟩
 
-def config (base : BaseUrl) : OAuth.OAuthConfig Todo.tenant where
-  issuer := origin base
-  authorizationEndpoint := origin base ++ links.oauthAuthorize
-  tokenEndpoint := origin base ++ links.oauthToken
-  registrationEndpoint := origin base ++ links.oauthRegister
-  scopesSupported := scopes
+def config (base : BaseUrl) : OAuth.OAuthConfig Todo.tenant :=
+  OAuth.OAuthConfig.atOrigin base scopes
 
 /-- No adapter fetches a client's metadata document, so `client_id_metadata_document_supported`
 comes out `false` and a client registers dynamically instead. Both are ways in and clients
@@ -72,8 +68,6 @@ route for at all.
 Withdrawing the offer is what leaves a way in rather than two. A client believes the document
 ahead of a refusal, so advertising a mechanism that ends in one does not leave it a choice. -/
 def documents : Option (OAuth.ClientDocuments IO) := none
-
-def metadata (base : BaseUrl) : Json := OAuth.metadataDocument documents (config base)
 
 /-- Where a client is told to look for the authorization server, which is what a refusal from
 the MCP endpoint carries so that an agent holding no token can find its way to one. -/
@@ -87,7 +81,7 @@ one, and there is nothing to be gained here by offering a choice. -/
 def resourceMetadata (base : BaseUrl) : Json :=
   MCP.ProtectedResourceMetadata.toJson
     { resource := (resource base).value
-      authorizationServers := #[(config base).issuer]
+      authorizationServers := #[origin base]
       scopesSupported := (scopes.map (·.value)).toArray }
 
 /-! ## What a handler deals in
@@ -96,15 +90,12 @@ The names the routes use, so that they say what they mean about this application
 naming a library twice over on every line. Each is the library's own type; the tenant is settled
 here because there is only one and a handler has nothing to say about it. -/
 
-abbrev Params := OAuth.Params
 abbrev Scope := OAuth.Scope
-abbrev Outcome := OAuth.Service.Outcome Todo.tenant
-abbrev Prompt := OAuth.Service.ConsentPrompt Todo.tenant
-abbrev Decision := OAuth.Service.ConsentDecision Todo.tenant
-abbrev Tokens := OAuth.Service.TokenResponse
-abbrev Refusal := OAuth.ErrorResponse
 abbrev Rejection := OAuth.AccessToken.Rejection
 abbrev Claims := OAuth.Service.TokenClaims Todo.tenant
+
+-- The names the consent form carries its answer under, which the routes reading it back fix.
+export OAuth.ConsentForm (answerField approveValue)
 
 /-- Everything a refusal at the MCP endpoint answers with. -/
 structure Challenge where
@@ -117,31 +108,12 @@ structure Challenge where
   -/
   document : Json
 
-/-- How a rejection reads to whoever is refused: the code RFC 6750 §3.1 gives it, and a sentence
-about this server rather than about the protocol. -/
-private def reasonFor : Rejection → String × String
-  | .unknown => ("invalid_token", "this server did not issue that token, or no longer knows it")
-  | .expired => ("invalid_token", "the token has expired; refresh it or ask again")
-  | .revoked => ("invalid_token", "the token was revoked; ask again")
-  | .wrongAudience => ("invalid_token", "the token was issued for a different resource")
-  | .insufficientScope _ =>
-    ("insufficient_scope", "the token was not granted the scopes this endpoint needs")
-
-/-- The document carries `resource_metadata` for the same reason the header does: it is how an
-agent holding nothing gets from a refusal to a token, and it is the part that a renamed header
-loses. `scope` names everything needed at once, so a client comes back for all of it rather than
-once per scope. -/
+/-- Both halves name `metadataUrl`, which is how an agent holding nothing gets from a refusal to
+a token and is the part a renamed header loses. -/
 def challengeFor (base : BaseUrl) (rejection : Rejection) : Challenge :=
-  let (error, description) := reasonFor rejection
   { status := OAuth.Service.rejectionStatus rejection
     header := OAuth.Service.challenge rejection (some (metadataUrl base))
-    document := Json.mkObj
-      ([ ("error", .str error),
-         ("error_description", .str description),
-         ("resource_metadata", .str (metadataUrl base)) ]
-        ++ match rejection with
-           | .insufficientScope needed => [("scope", .str (OAuth.Scope.render needed))]
-           | _ => []) }
+    document := OAuth.Service.refusalDocument rejection (some (metadataUrl base)) }
 
 /-! ## Wiring -/
 
@@ -152,23 +124,19 @@ def ports (pool : _root_.Postgres.Pool) (peppers : PepperRing) : OAuth.Service.P
     documents
     peppers }
 
-/-- Everything the routes need, as operations rather than as the ports they are reached through.
-Same reason `Todo.Store` and `Todo.Auth.Identity` are records: the handlers can then be driven
-without a database, and what happens against a real one is settled where it happens. -/
+/-- What this application still answers for once the authorisation server's own endpoints are
+the library's: the resource it protects, whether a token may act on it, and how a person takes
+an approval back. Operations rather than the ports they are reached through, for the reason
+`Todo.Store` and `Todo.Auth.Identity` are records: the handlers can then be driven without a
+database, and what happens against a real one is settled where it happens. -/
 structure Site where
   /-- The address an agent is pointed at, which is the one thing somebody setting one up has to
   be told. -/
   endpoint : String
-  /-- The RFC 8414 document, which is how a client learns the endpoints exist at all. -/
-  metadata : Json
-  /-- The RFC 9728 document, which is how a client learns which server issues tokens for here. -/
+  /-- The RFC 9728 document, which is how a client learns which server issues tokens for here.
+  Served by this application rather than by the library, because it describes this resource
+  rather than that server. -/
   resourceMetadata : Json
-  authorize : Params → Option String → IO Outcome
-  conclude : Decision → IO Outcome
-  token : Params → IO (Except Refusal Tokens)
-  /-- The status and body a registration is answered with, either way, since the only thing a
-  caller does with either outcome is render it. -/
-  register : Json → IO (Nat × Json)
   /-- Whether a presented token may act here, and as whom. -/
   verify : String → IO (Except Rejection Claims)
   /-- Withdraws every connection this account holds here, and reports how many there were. -/
@@ -181,49 +149,13 @@ structure Site where
 standing in for the operations still answers these the way a deployment would. -/
 def describing (base : BaseUrl) : Site :=
   { endpoint := (Authorization.resource base).value
-    metadata := Authorization.metadata base
     resourceMetadata := Authorization.resourceMetadata base
     challenge := challengeFor base
-    authorize := fun _ _ => pure (.refuse { error := .serverError, description := "" })
-    conclude := fun _ => pure (.refuse { error := .serverError, description := "" })
-    token := fun _ => pure (.error { error := .serverError, description := "" })
-    register := fun _ => pure (500, Json.mkObj [])
     verify := fun _ => pure (.error .unknown)
     disconnect := fun _ => pure 0 }
 
-/-- What a client that named no scopes is asked about.
-
-OAuth 2.1 §3.2.2.1 leaves a server two answers to a request carrying no `scope`: a default, or a
-refusal. The library supplies the refusal and leaves the default here, because what is on offer
-is this deployment's to say. Agents that name no scopes are common rather than odd, so without a
-default they would all be turned away.
-
-Amending the prompt rather than the request it came from is the difference between offering a
-default and pretending one was asked for. `ConsentPrompt.answered` carries the amendment into the
-code, so what is issued matches what the page displayed, while `prompt.request` still records
-what the client actually sent.
-
-The default is everything on offer, which is not the same as granting it: the page still asks,
-and a box unticked there is a scope withheld. -/
-def withDefaultScopes (prompt : Prompt) : Prompt :=
-  if prompt.requestedScopes.isEmpty then { prompt with requestedScopes := scopes } else prompt
-
 def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
-  let config := Authorization.config base
   { describing base with
-    -- Amended here rather than in the handler so that both the page and the answer to it see the
-    -- same prompt: the handler runs `authorize` again on the way through, which is what re-reads
-    -- the request rather than reassembling it from hidden fields.
-    authorize := fun params session => do
-      match ← OAuth.Service.authorize ports config params (session.map (⟨·⟩)) with
-      | .consent prompt => pure (.consent (withDefaultScopes prompt))
-      | settled => pure settled
-    conclude := OAuth.Service.conclude ports config
-    token := OAuth.Service.token ports config
-    register := fun body => do
-      match ← OAuth.Service.register (tenant := Todo.tenant) ports body with
-      | .ok record => pure (OAuth.Registration.createdStatus, OAuth.Registration.response record)
-      | .error refusal => pure (refusal.status, refusal.toJson)
     verify := fun presented =>
       OAuth.Service.verify ports ⟨presented⟩ (Authorization.resource base)
     disconnect := fun account => do
@@ -231,16 +163,5 @@ def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
       for connection in live do
         OAuth.Service.revoke ports account connection.client connection.resource
       pure live.length }
-
-/-! ## Reading a request -/
-
-/-- Every parameter as it was sent, duplicates included.
-
-Duplicates are the point of not collapsing them into a lookup: OAuth 2.1 §4.1.1 makes a parameter
-sent twice `invalid_request`, and a reader that kept the first would accept a request the
-specification says to refuse, in exactly the case somebody is trying something. -/
-def params (query : URI.Query) : OAuth.Params :=
-  query.toArray.toList.filterMap fun (name, value) =>
-    name.decode.map fun name => (name, (value.bind (·.decode)).getD "")
 
 end Todo.Authorization

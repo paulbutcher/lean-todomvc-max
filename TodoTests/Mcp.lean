@@ -79,7 +79,7 @@ private def siteOf (store : Store) (site : Authorization.Site := authorization) 
   let auth : StatelessHandler :=
     { onRequest := fun _ => "no sign-in here" |> Response.notFound.text }
   pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store assistant sessions
-    site).onRequest
+    site (← oauthRoutesOn)).onRequest
 
 private def call (body : String) (credential : Option String := some s!"Bearer {fullAccess}") :
     String :=
@@ -273,39 +273,18 @@ private def testCallsReachTheStoreAsTheTokensAccount : IO Unit := do
   checkEq "the todo is alice's" #["gamma"] (← titlesOf store)
   checkEq "and nobody else's" #[] (← titlesOf store bob)
 
-/-! ## Reading an authorization request -/
-
-/-- A parameter sent twice is `invalid_request`, which the authorisation server can only say if
-it is told the parameter arrived twice. A reader that kept the first would quietly accept a
-request the specification refuses, in exactly the case somebody is trying something. -/
-private def testDuplicatedParametersSurviveBeingRead : IO Unit := do
-  let query := (URI.Query.empty.insert "resource" "https://one.example").insert
-    "client_id" "https://client.example"
-  let doubled := query.insertEncoded (URI.EncodedQueryParam.encode "resource")
-    (some (URI.EncodedQueryParam.encode "https://two.example"))
-  checkEq "one of each is read as one of each" 2 (Authorization.params query).length
-  checkEq "and a repeat is read as a repeat" 3 (Authorization.params doubled).length
-  checkEq "with the values it was sent"
-    ["https://one.example", "https://two.example"]
-    ((Authorization.params doubled).filterMap fun (name, value) =>
-      if name == "resource" then some value else none)
-
 /-! ## Asking the person -/
 
-private def someClient : Authentication.OAuth.Client :=
-  { id := ⟨"https://agent.example/metadata"⟩
-    metadata :=
-      { clientName := "Some Agent", redirectUris := ["https://agent.example/callback"] }
-    origin := .metadataDocument }
-
-private def somePrompt (loopbackOnly : Bool := false) : Authorization.Prompt :=
-  { request :=
-      { clientId := someClient.id, redirectUri := "https://agent.example/callback",
-        redirectUriGiven := true, state := some "opaque",
-        scopes := [Authorization.read, Authorization.write], codeChallenge := "challenge",
-        resource := Authorization.resource testBase, prompt := [], maxAge := none }
-    account := alice
-    client := someClient
+/-- What the consent page is handed, which the library builds from the prompt and the request it
+arrived on. Written out here because the page is this application's and reading it is the only
+way to check that what a person is shown is what the specification requires. -/
+private def someContext (loopbackOnly : Bool := false) :
+    Authentication.OAuth.Http.ConsentContext :=
+  { tenantName := "TodoMVC"
+    action := links.oauthAuthorize
+    antiForgeryField := ({} : Middleware.AntiForgeryOptions).paramName
+    antiForgeryToken := "csrf"
+    clientName := "Some Agent"
     clientHost := some "agent.example"
     redirectHost := "agent.example"
     loopbackOnly
@@ -313,32 +292,11 @@ private def somePrompt (loopbackOnly : Bool := false) : Authorization.Prompt :=
     requestedScopes := [Authorization.read, Authorization.write]
     grantedScopes := [] }
 
-/-- A client that names no scopes is asked about everything on offer, rather than about nothing.
-
-A prompt with nothing on it is a page with no boxes, and the only answer such a page can carry is
-an approval of nothing, which `conclude` reads as a refusal. So without a default a client that
-named no scopes could never get in at all, and agents that name none are common. What is offered
-is a default; the person still decides.
-
-The request itself is left alone. Amending the prompt is offering a default; amending the request
-would be recording that the client asked for something it did not. -/
-private def testAClientThatNamesNoScopesIsAskedAboutEverything : IO Unit := do
-  let named : Authorization.Prompt := { somePrompt with requestedScopes := [Authorization.read] }
-  let unnamed : Authorization.Prompt :=
-    { somePrompt with
-        requestedScopes := [], request := { somePrompt.request with scopes := [] } }
-  checkEq "a client that named one is asked about that one" [Authorization.read]
-    (Authorization.withDefaultScopes named).requestedScopes
-  checkEq "and one that named none is asked about all of them" Authorization.scopes
-    (Authorization.withDefaultScopes unnamed).requestedScopes
-  checkEq "without the request being rewritten to claim it asked" []
-    (Authorization.withDefaultScopes unnamed).request.scopes
-
 /-- Everything the MCP authorization specification requires be displayed is displayed, and the
 name the client gave itself is never the only thing shown: a name is a string it chose, and the
 host beside it is not. -/
 private def testTheConsentPageSaysWhoIsAskingAndWhereTheAnswerGoes : IO Unit := do
-  let page := consentPage (somePrompt) links.oauthAuthorize (some "csrf")
+  let page := consentPage (someContext)
   checkEq "the name the client gave itself" true (mentions page "Some Agent")
   checkEq "the host that vouches for it" true (mentions page "agent.example")
   checkEq "and the anti-forgery token, without which the answer cannot be posted" true
@@ -347,72 +305,20 @@ private def testTheConsentPageSaysWhoIsAskingAndWhereTheAnswerGoes : IO Unit := 
 /-- A client running on the person's own machine gets a warning of its own, because no document
 can establish who is listening on a port of theirs. -/
 private def testALoopbackClientIsCalledOut : IO Unit := do
-  let ordinary := consentPage (somePrompt) links.oauthAuthorize none
-  let loopback := consentPage (somePrompt (loopbackOnly := true)) links.oauthAuthorize none
+  let ordinary := consentPage (someContext)
+  let loopback := consentPage (someContext (loopbackOnly := true))
   checkEq "the ordinary one says nothing about this device" false
     (mentions ordinary "on this device")
   checkEq "the loopback one does" true (mentions loopback "on this device")
 
-/-- Each scope is its own field, so what comes back says which were left ticked rather than how
-many were. A single repeated name would be read as one answer and the distinction between a
-read-only grant and a full one would be lost. -/
+/-- The page puts every scope on offer behind the field name the handler reads it back under.
+One name per scope is what makes the answer say which were left ticked rather than how many. -/
 private def testEachScopeIsItsOwnAnswer : IO Unit := do
-  checkEq "the two scopes have two fields" false
-    (approvalField Authorization.read == approvalField Authorization.write)
-  let page := consentPage (somePrompt) links.oauthAuthorize none
+  let page := consentPage (someContext)
   for scope in [Authorization.read, Authorization.write] do
     checkEq s!"{scope.value} has a box" true
-      (mentions page (approvalField scope))
+      (mentions page scope.approvalField)
 
-/-- A scope's field name needs no escaping and belongs to that scope alone, whatever the scope is
-called.
-
-What a scope is called is the client's choice, so the test is over any scope a client could ask
-for rather than over the two this server offers: a name carrying a space or a `%` would still be
-read back correctly, but only one that also stayed distinct would be read back as the right
-scope. -/
-private def testAnApprovalFieldSurvivesBeingPostedByABrowser : IO Unit := do
-  let unescaped (c : Char) : Bool :=
-    c.isAlphanum || c == '*' || c == '-' || c == '.' || c == '_'
-  let asked := Authorization.scopes ++ [⟨"a b"⟩, ⟨"%"⟩, ⟨"+"⟩, ⟨"emoji🙂"⟩]
-  for scope in asked do
-    checkEq s!"the field for {scope.value} needs no escaping" true
-      ((approvalField scope).all unescaped)
-  checkEq "and distinct scopes keep distinct fields" asked.length
-    ((asked.map approvalField).eraseDups.length)
-
-/-- What the consent form's answer amounts to: the boxes that were ticked, and nothing else.
-
-Anything but `allow` is a refusal. An `allow` with every box unticked is one too, but converting
-it is not this layer's job: `conclude` reads an approval that narrows to nothing as a denial, and
-a guard here as well would be the same rule kept in two places. What is checked here is that the
-answer sent is the answer that was given. -/
-private def testTheConsentFormSendsTheAnswerThatWasGiven : IO Unit := do
-  let store ← memoryStore alice #[]
-  -- Three-valued so that "never called" is distinguishable from "granted nothing". Collapsing
-  -- them would let a post that never reached `conclude` pass as one that granted nothing.
-  let seen ← IO.mkRef (none : Option (Option (List Authorization.Scope)))
-  let recording : Authorization.Site :=
-    { scriptedAuthorization testBase (prompt := some (somePrompt)) with
-      conclude := fun decision => do
-        seen.set (some (match decision with
-          | .granted _ scopes => some scopes
-          | .denied _ => none))
-        pure (.respond ⟨"https://agent.example/callback?done"⟩) }
-  -- Answered by a browser, since a person is what answers this: the form only works if the page
-  -- renders the token into it, and the whole stack is the only thing that shows it does.
-  let browser ← browserFor store recording
-  discard <| browser.get links.oauthAuthorize
-  let post (fields : List (String × String)) :
-      IO (Option (Option (List Authorization.Scope))) := do
-    seen.set none
-    discard <| browser.post links.oauthAuthorize fields
-    seen.get
-  checkEq "deny is a refusal" (some none) (← post [("decision", "deny")])
-  checkEq "allow with nothing ticked approves nothing, which `conclude` refuses"
-    (some (some [])) (← post [("decision", "allow")])
-  checkEq "a box that is ticked is granted" (some (some [Authorization.read]))
-    (← post [("decision", "allow"), (approvalField Authorization.read, "on")])
 
 /-! ## The list on the page catching up -/
 
@@ -466,18 +372,14 @@ def runMcpTests : IO Unit := do
   testATokenThatReachesNothingIsRefusedRatherThanServedNothing
   testARefusalSaysWhyInItsBodyToo
   testTheServerOffersNoWayInThatEndsInARefusal
-  testAClientThatNamesNoScopesIsAskedAboutEverything
   testATokenIsRequired
   testAFullTokenReachesEveryTool
   testAReadOnlyTokenReachesOnlyTheReadingTools
   testAReadOnlyTokenCannotChangeAnything
   testCallsReachTheStoreAsTheTokensAccount
-  testDuplicatedParametersSurviveBeingRead
   testTheConsentPageSaysWhoIsAskingAndWhereTheAnswerGoes
   testALoopbackClientIsCalledOut
   testEachScopeIsItsOwnAnswer
-  testAnApprovalFieldSurvivesBeingPostedByABrowser
-  testTheConsentFormSendsTheAnswerThatWasGiven
   testTheDigestFollowsEveryVisibleChange
   testAPollThatIsUpToDateChangesNothing
   testAChangeMadeElsewhereReachesThePage

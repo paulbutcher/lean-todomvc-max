@@ -109,15 +109,18 @@ def tenantConfig (settings : Settings) (t : TenantId) : TenantConfig t where
 
 structure Site where
   ports : Service.Ports IO
+  /-- The authorisation server reaches its own two stores through these, and the routes it now
+  serves need them directly rather than through `authorization`. -/
+  oauthPorts : OAuth.Service.Ports IO
   authorization : Todo.Authorization.Site
   settings : Settings
 
-def site (pool : _root_.Postgres.Pool) (settings : Settings) : Site where
-  ports := ports pool settings
-  authorization :=
-    Todo.Authorization.site (Todo.Authorization.ports pool { current := settings.pepper })
-      settings.baseUrl
-  settings
+def site (pool : _root_.Postgres.Pool) (settings : Settings) : Site :=
+  let oauthPorts := Todo.Authorization.ports pool { current := settings.pepper }
+  { ports := ports pool settings
+    oauthPorts
+    authorization := Todo.Authorization.site oauthPorts settings.baseUrl
+    settings }
 
 namespace Site
 
@@ -129,6 +132,24 @@ def http (s : Site) : Authentication.Http.Config where
   ports := s.ports
   pages := Todo.pages
   tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
+
+/-- The authorisation server's own endpoints, at the origin rather than below the tenant's path:
+there is one tenant and the application is mounted at the root, so the prefix would distinguish
+nothing, and it puts the metadata document where every client looks first.
+
+`defaultScopes` is set, which is the half of OAuth 2.1 §3.2.2.1 the library leaves to a
+deployment. Everything on offer, because agents that name no scopes are common rather than odd
+and the alternative is refusing them all; the page still asks, and a box left unticked is a scope
+withheld. -/
+def oauth (s : Site) : Authentication.OAuth.Http.Config where
+  ports := s.oauthPorts
+  pages := Todo.oauthPages
+  mountedAt := .origin Todo.tenant
+  defaultScopes := some Todo.Authorization.scopes
+  tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
+  oauth := fun t =>
+    if h : t = Todo.tenant then pure (some (h ▸ Todo.Authorization.config s.settings.baseUrl))
+    else pure none
 
 end Site
 

@@ -168,15 +168,6 @@ never as a heading, and always beside a host that did not choose it. -/
 private def claimedName (name : String) : String :=
   if name.trimAscii.isEmpty then "An application" else name
 
-/-- The field name a scope's checkbox carries. One name per scope rather than one repeated name,
-so each is read back with an ordinary single-valued lookup.
-
-Encoded rather than the scope's own text. A scope is an opaque string the client chose, and this
-puts the field name beyond that choice: whatever is in it, what reaches the form is a name of
-`A-Za-z0-9_-` that needs no escaping and stays distinct from every other scope's. -/
-def approvalField (scope : Authentication.OAuth.Scope) : String :=
-  "approve-" ++ Codec.Base64Url.encodeString scope.value.toUTF8
-
 /-- What is shown when the client, or the address it asked to be sent back to, could not be
 established.
 
@@ -204,15 +195,14 @@ establish who is listening on a port of this person's own machine.
 The scopes are checkboxes rather than one yes: granting an agent the run of the list when it
 only ever needed to read it is the mistake worth making easy to avoid. `conclude` narrows
 whatever comes back to what was asked for, so nothing here can widen a grant. -/
-def consentPage (prompt : Authentication.OAuth.Service.ConsentPrompt Todo.tenant)
-    (action : String) (token : Option String) : String :=
-  let name := claimedName prompt.client.metadata.clientName
+def consentPage (context : Authentication.OAuth.Http.ConsentContext) : String :=
+  let name := claimedName context.clientName
   let vouching : List (Node .flow) :=
-    match prompt.clientHost with
+    match context.clientHost with
     | some host => [p [s!"It identifies itself at {host}."]]
     | none => [p ["It registered itself with this server, so nothing vouches for that name."]]
   let loopback : List (Node .flow) :=
-    if prompt.loopbackOnly then
+    if context.loopbackOnly then
       [p ["It is running on this device. Nothing can establish what it is, beyond that you \
            started it."] { class_ := "warn" }]
     else []
@@ -220,19 +210,28 @@ def consentPage (prompt : Authentication.OAuth.Service.ConsentPrompt Todo.tenant
     ([ h2 [s!"Allow {name}?"],
        p [s!"{name} is asking to use your todo list."] ]
       ++ vouching
-      ++ [p [s!"If you allow it, your answer is sent to {prompt.redirectHost}."]]
+      ++ [p [s!"If you allow it, your answer is sent to {context.redirectHost}."]]
       ++ loopback
       ++ [ form
              ([ (Html.label ["It is asking to:"] : Node .flow),
-                (ul (prompt.requestedScopes.map fun scope =>
+                (ul (context.requestedScopes.map fun scope =>
                   li [ input
-                         { type := "checkbox", name := approvalField scope, value := "on",
-                           checked := true, id := approvalField scope },
+                         { type := "checkbox", name := scope.approvalField, value := "on",
+                           checked := true, id := scope.approvalField },
                        Html.label [Todo.Authorization.describe scope]
-                         { for_ := approvalField scope } ]) { class_ := "scopes" } : Node .flow) ]
-               ++ hidden ({} : Middleware.AntiForgeryOptions).paramName token
-               ++ [ (button ["Allow"] { name := "decision", value := "allow" } : Node .flow),
-                    (button ["Deny"] { name := "decision", value := "deny" } : Node .flow) ])
-             { method := "post", action } ])
+                         { for_ := scope.approvalField } ]) { class_ := "scopes" } : Node .flow) ]
+               -- The field name is the routes' rather than this page's, because it has to match
+               -- whatever `antiForgery` those routes were mounted inside was configured with.
+               ++ hidden context.antiForgeryField (some context.antiForgeryToken)
+               ++ [ (button ["Allow"]
+                      { name := Authorization.answerField, value := Authorization.approveValue }
+                      : Node .flow),
+                    (button ["Deny"] { name := Authorization.answerField, value := "deny" }
+                      : Node .flow) ])
+             { method := "post", action := context.action } ])
+
+def oauthPages : Authentication.OAuth.Http.OAuthPages where
+  consent := consentPage
+  refusedClient := refusedClientPage
 
 end Todo

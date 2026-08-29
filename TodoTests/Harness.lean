@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 module
 
+public import AuthenticationSqlite
 public import Middleware.Test.Browser
 public import Todo.App
 public import Todo.Auth
@@ -118,16 +119,8 @@ told. Issuing one is the library's, and it has theorems about that.
 `base` is what the two metadata documents and the challenge are built from, so those come out as
 the real ones do; a test reading either is reading what a deployment would serve. -/
 def scriptedAuthorization (base : Authentication.BaseUrl)
-    (issued : List (String × Account × List Authorization.Scope) := [])
-    (prompt : Option Authorization.Prompt := none) : Authorization.Site :=
+    (issued : List (String × Account × List Authorization.Scope) := []) : Authorization.Site :=
   { Authorization.describing base with
-    authorize := fun _ _ =>
-      pure (match prompt with
-            | some prompt => .consent prompt
-            | none => .refuse { error := .invalidClient, description := "no clients here" })
-    conclude := fun _ => pure (.respond ⟨"https://client.example/callback?code=granted"⟩)
-    token := fun _ => pure (.error { error := .invalidGrant, description := "no grants here" })
-    register := fun _ => pure (401, Json.mkObj [("error", .str "invalid_client")])
     verify := fun presented =>
       pure (match issued.find? (·.1 == presented) with
             | some (_, account, scopes) =>
@@ -135,6 +128,36 @@ def scriptedAuthorization (base : Authentication.BaseUrl)
                     resource := Authorization.resource base, scopes,
                     expiresAt := ⟨Int.ofNat 4102444800⟩ }
             | none => .error .unknown) }
+
+/-- The authorisation server's own endpoints, on a database of their own.
+
+Real rather than scripted, because they are the library's routes now and there is nothing left
+here to stand in for them. What is still worth testing through them is this application's own
+wiring: that the documents a client discovers name this deployment's endpoints, and that a
+request reaching them is not turned away by the middleware the browser routes sit behind. -/
+def oauthRoutesOn (base : Authentication.BaseUrl := testBase) :
+    IO Authentication.OAuth.Http.Routes := do
+  let db ← Authentication.Sqlite.openInMemory
+  db.exec Authentication.OAuth.sqliteSchemaSql
+  let settings : Todo.Auth.Settings :=
+    { pepper := { keyId := ⟨"test"⟩, secret := "todomvc-test-pepper".toUTF8 }
+      baseUrl := base
+      senderAddress := ⟨"no-reply", ⟨["todos", "example"]⟩⟩
+      transport := Authentication.EmailTransport.console }
+  pure (Authentication.OAuth.Http.routes
+    { ports :=
+        { store := Authentication.Sqlite.store db
+          oauth := Authentication.OAuth.sqlOAuthStore Authentication.Sqlite.dialect
+            (Authentication.Sqlite.connection db)
+          peppers := { current := settings.pepper } }
+      pages := Todo.oauthPages
+      mountedAt := .origin Todo.tenant
+      defaultScopes := some Todo.Authorization.scopes
+      tenant := fun t =>
+        pure (if t == Todo.tenant then some (Todo.Auth.tenantConfig settings t) else none)
+      oauth := fun t =>
+        if h : t = Todo.tenant then pure (some (h ▸ Todo.Authorization.config base))
+        else pure none })
 
 /-- An authorization server nobody holds a token for, for the routes that have nothing to do with
 one. Every request it sees is refused exactly as a real one refuses a client it has never heard
