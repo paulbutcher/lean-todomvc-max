@@ -461,7 +461,7 @@ middleware that requires one. -/
 def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
   let presented := (req.line.headers.getLast? (Header.Name.mk "authorization")).map toString
-  let some credential := Authorization.bearer? presented
+  let some credential := MCP.bearer? presented
     | do
       (Telemetry.info "mcp call carried no bearer token" [] : TelemetryT Async Unit).run
         (parentSpan req)

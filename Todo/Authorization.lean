@@ -234,13 +234,6 @@ def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
 
 /-! ## Reading a request -/
 
-/-- The credential a request presents, if it presents one in the only form MCP allows. -/
-def bearer? (header : Option String) : Option String :=
-  header.bind fun value =>
-    let trimmed := value.trimAscii.toString
-    if trimmed.toLower.startsWith "bearer " then some (trimmed.drop 7).trimAscii.toString
-    else none
-
 /-- Every parameter as it was sent, duplicates included.
 
 Duplicates are the point of not collapsing them into a lookup: OAuth 2.1 §4.1.1 makes a parameter
