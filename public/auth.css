@@ -67,6 +67,21 @@ Released under Apache 2.0 license as described in the file LICENSE.
   background: #a03238;
 }
 
+/* Quieter than the red buttons, which are the ones that do something: this repeats what the
+   keyboard can already do, and a page whose loudest control is a convenience reads wrong. */
+.auth button.copy {
+  margin-top: 0;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: #4d4d4d;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+}
+
+.auth button.copy:hover {
+  background: #f5f5f5;
+}
+
 /* The cross-device code entry. Collapsed because it applies to one way of arriving here and
    not the usual one, and an open field asks to be filled in. */
 .auth .aside {
@@ -111,7 +126,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 /* The prompt somebody hands to their own assistant. A `readonly` textarea rather than a block
    of prose, because what has to happen next is a select-all and a copy, and a textarea is what
-   a browser will select the whole of on its own. */
+   a browser will select the whole of on its own. `connect.js` reads and selects it as a form
+   control, so prose styled to look like this would leave the copy button with nothing to take. */
 .auth textarea.prompt {
   width: 100%;
   box-sizing: border-box;

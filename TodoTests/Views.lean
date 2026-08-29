@@ -26,6 +26,12 @@ open Todo Html
 #guard countLabel 1 == "1 item left"
 #guard countLabel 2 == "2 items left"
 
+-- A card page runs a script only if it asked for one. Sign-in and the consent page are where a
+-- person's credentials and their answer are given, and they ask for none; a script put into
+-- `cardPage` itself rather than passed to it would run on both.
+#guard ((cardPage "heading" [] []).splitOn "<script").length == 1
+#guard ((cardPage "heading" [] [connectScript]).splitOn "<script").length == 2
+
 /-- A page carries an `hx-headers` attribute exactly when there is a token to put in it: never
 announcing a token it doesn't have, and never silently dropping one it does (which would make
 every mutation from that page fail anti-forgery validation). -/

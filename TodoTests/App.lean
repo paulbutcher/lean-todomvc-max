@@ -176,6 +176,12 @@ private def testTheConnectPageExplainsEveryScopeOnOffer : IO Unit := do
     check s!"GET /connect, which explains {scope.value}" (mkGetClose Routes.links.connect)
       handler fun response => assertContains response (Authorization.describe scope)
 
+/-- The copy button is the one control here that does nothing without a script, so a page that
+served the button and not the script would look finished and be inert. -/
+private def testTheConnectPageServesWhatMakesTheCopyButtonWork : IO Unit := do
+  check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
+    fun response => assertContains response connectScript.src
+
 /-- Somebody whose assistant has stopped working needs a way out of it from here, and the way out
 is a request to this application rather than something to do in the assistant. -/
 private def testTheConnectPageOffersAWayToWithdrawApprovals : IO Unit := do
@@ -214,6 +220,7 @@ def runAppTests : IO Unit :=
     testSignInRoutesAreServedOutsideAntiForgery
     testTheConnectPageNamesTheEndpointAnAgentReaches
     testTheConnectPageExplainsEveryScopeOnOffer
+    testTheConnectPageServesWhatMakesTheCopyButtonWork
     testTheConnectPageOffersAWayToWithdrawApprovals
     testDisconnectingWithdrawsForTheAccountThatAsked
 

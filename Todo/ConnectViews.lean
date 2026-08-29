@@ -77,6 +77,11 @@ def connectPage (endpoint : String) (token : Option String) (disconnected : Bool
       Html.label ["Paste this to your assistant"] { for_ := "agent-prompt" },
       textarea (agentPrompt endpoint)
         { id := "agent-prompt", class_ := "prompt", rows := some "14", readonly := true },
+      -- The one place on this site a browser needs telling what to do, and `connect.js` is what
+      -- tells it. Without the script the button is inert, which is why it names its source in an
+      -- attribute rather than being wired up by position: a page that renders it is a page that
+      -- has said what it copies.
+      p [button ["Copy"] { type := "button", class_ := "copy" } [("data-copy", "agent-prompt")]],
       p ["Nothing in it is secret, so it is safe to paste anywhere you would paste a web \
           address."] { class_ := "note" },
       Html.label ["What it will ask for"],
@@ -92,5 +97,6 @@ def connectPage (endpoint : String) (token : Option String) (disconnected : Bool
               at that address."] ]
         { class_ := "aside" } ]
     ++ [disconnectSection token, p [a { href := links.index } ["Back to your list"]]])
+    [connectScript]
 
 end Todo

@@ -2,10 +2,6 @@
 
 Open items only. Anything settled has gone to the code, a comment, or a commit message.
 
-## This repo
-
-- A copy button on `/connect` needs ~10 lines of JavaScript, left out under the no-JS rule.
-
 ## Deployment
 
 - **On hold.** `WWW-Authenticate` is renamed to `x-amzn-Remapped-www-authenticate` by the Lambda

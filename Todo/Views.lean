@@ -45,15 +45,26 @@ and not prose. -/
 def authCss : LinkAttrs :=
   { rel := "stylesheet", href := "/auth.css" }
 
+/-- The copy button on the connect page, which is the one thing on any of these pages a browser
+cannot do without being told how. -/
+def connectScript : ScriptAttrs :=
+  { src := "/connect.js" }
+
 /-- A page that is read rather than worked in, in the shell the todo list uses so that leaving
 the list does not look like leaving the site. The heading floats above the card on
-`todomvc-app-css`'s own positioning; it is here for that rather than to say anything. -/
-def cardPage (heading : String) (children : List (Node .flow)) : String :=
+`todomvc-app-css`'s own positioning; it is here for that rather than to say anything.
+
+`scripts` is a parameter so that the pages which need none carry none: sign-in and the consent
+page are where a person's credentials and their answer are given, and the less that runs there
+the better. -/
+def cardPage (heading : String) (children : List (Node .flow))
+    (scripts : List ScriptAttrs := []) : String :=
   document
     [ head
-        [ meta_ [("charset", "utf-8")],
-          meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
-          title heading, link todomvcCss, link authCss, link favicon ],
+        ([ meta_ [("charset", "utf-8")],
+           meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
+           title heading, link todomvcCss, link authCss, link favicon ]
+          ++ scripts.map (script · [])),
       body
         [ section_
             [ header [h1 ["todos"]] { class_ := "header" },
