@@ -99,7 +99,7 @@ export AWS_REGION=<region>
 export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
-## Bringing your own agent
+## Bringing your own agent (MCP support)
 
 An agent of your own can reach the same tools the panel has, over
 [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent
