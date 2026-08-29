@@ -1,8 +1,8 @@
 # TodoMVC Max
 
 [TodoMVC](https://todomvc.com) in Lean 4, plus everything a production application needs around it:
-passwordless sign-in, SQL migrations, telemetry, an LLM assistant panel via Bedrock, and IaC
-deployment to AWS Lambda.
+passwordless sign-in, SQL migrations, telemetry, an LLM assistant panel via Bedrock, an MCP
+endpoint your own agent can use, and IaC deployment to AWS Lambda.
 
 The UI is HTMX plus a very little JavaScript.
 
@@ -28,6 +28,8 @@ make some very strong guarantees, including:
 - **Markdown is formally verified.** lean-markdown is total, never panicking or looping on any
   input including adversarial input. `renderHtmlSafe` is proved to emit well-formed HTML in
   which no string from the document can produce markup or break out of an attribute.
+- **What an agent was granted bounds what it can reach.** A token that was not granted
+  `todos:write` reaches no tool that changes anything (`nothing_mutates_without_write`).
 - **Encodings are proved to round-trip.** What is written to a chat row is what is read
   back from it (`toMsg_ofMsg`), which matters because the conversation is replayed to the model in
   full on every turn. Underneath, leancrypto proves `decode (encode bytes) = some bytes` for hex,
@@ -43,7 +45,8 @@ Lean, `Std.Http.Server`, and:
 | [lean-html](https://github.com/paulbutcher/lean-html) · [lean-htmx](https://github.com/paulbutcher/lean-htmx) | typed markup and typed `hx-*` attributes |
 | [lean-routing](https://github.com/paulbutcher/lean-routing) | typed router and route table |
 | [lean-middleware](https://github.com/paulbutcher/lean-middleware) | sessions, sealed cookie store, anti-forgery, static files, request tracing |
-| [lean-authentication](https://github.com/paulbutcher/lean-authentication) | magic links, sessions, rate limiting, bounce handling, consent |
+| [lean-authentication](https://github.com/paulbutcher/lean-authentication) | magic links, sessions, rate limiting, bounce handling, consent, and an OAuth 2.1 authorisation server |
+| [lean-mcp](https://github.com/paulbutcher/lean-mcp) | an MCP server over Streamable HTTP |
 | [leanpostgres](https://github.com/paulbutcher/leanpostgres) · [leanmigrate](https://github.com/paulbutcher/leanmigrate) | `libpq` bindings with a connection pool; migrations as plain SQL files |
 | [lean-telemetry](https://github.com/paulbutcher/lean-telemetry) | OpenTelemetry traces and logs |
 | [lean-llmclient](https://github.com/paulbutcher/lean-llmclient) · [lean-markdown](https://github.com/paulbutcher/lean-markdown) | provider-agnostic chat with tool calling; GFM for rendering replies |
