@@ -129,6 +129,36 @@ def scriptedAuthorization (base : Authentication.BaseUrl)
                     expiresAt := ⟨Int.ofNat 4102444800⟩ }
             | none => .error .unknown) }
 
+/-- One row of what an account has connected. `client` is the identifier a grant is held under,
+which for a dynamically registered client is opaque and for one known by a URL is that URL. -/
+def connectionOf (client : String) (clientName : Option String)
+    (scopes : List Authorization.Scope)
+    (origin : Authentication.OAuth.ClientOrigin := .dynamic)
+    (base : Authentication.BaseUrl := testBase) : Authorization.Connection :=
+  { client := ⟨client⟩, clientName, origin
+    resource := Authorization.resource base, scopes
+    since := none, lastUsedAt := ⟨Int.ofNat 1756000000⟩ }
+
+/-- An authorization server holding the connections it is given, which forgets one when it is
+withdrawn. Stateful because withdrawing one and leaving the rest is exactly what these tests are
+about, and a site that answered the same list either way could not show it. -/
+def holdingConnections (live : IO.Ref (List Authorization.Connection))
+    (base : Authentication.BaseUrl := testBase) : IO Authorization.Site := do
+  pure
+    { Authorization.describing base with
+      connections := fun _ => live.get
+      revoke := fun _ client resource => do
+        let held ← live.get
+        match held.find? (fun c => c.client.value == client && c.resource.value == resource) with
+        | none => pure false
+        | some _ =>
+          live.set (held.filter fun c => !(c.client.value == client && c.resource.value == resource))
+          pure true
+      disconnect := fun _ => do
+        let held ← live.get
+        live.set []
+        pure held.length }
+
 /-- The authorisation server's own endpoints, on a database of their own.
 
 Real rather than scripted, because they are the library's routes now and there is nothing left

@@ -6,6 +6,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Html
+public import Todo.AuthMail
 public import Todo.Authorization
 public import Todo.Views
 
@@ -44,8 +45,55 @@ def agentPrompt (endpoint : String) : String :=
 private def scopeLine (scope : Authentication.OAuth.Scope) : Node .listItem :=
   li [Todo.Authorization.describe scope]
 
-/-- Withdrawing every approval at once, which is the only shape this can take until an account's
-live connections can be listed: there is no way here to name one and leave the rest.
+/-- Where the name came from, which a page showing one is required to say (AUTH-20.6.10).
+
+A client that registered itself chose its own name and nothing stands behind it. One known by a
+URL is vouched for by that host and no further: the host is the part worth showing, because it is
+the part the client could not have made up. -/
+private def vouching (connection : Authorization.Connection) : Node .flow :=
+  match connection.origin, connection.client.host? with
+  | .metadataDocument, some host => p [s!"Identified at {host}."] { class_ := "note" }
+  | .metadataDocument, none => p ["Identified by a URL."] { class_ := "note" }
+  | .dynamic, _ =>
+    p ["Registered itself here, so nothing vouches for that name."] { class_ := "note" }
+
+private def connectionRow (token : Option String)
+    (connection : Authorization.Connection) : Node .listItem :=
+  let name :=
+    match connection.clientName with
+    | some name => if name.trimAscii.isEmpty then "An assistant" else name
+    | none => "An assistant"
+  li
+    [ p [strong [name]],
+      vouching connection,
+      p ["It can:"],
+      ul (connection.scopes.map scopeLine),
+      p [s!"Last used {AuthMail.inWords connection.lastUsedAt}."] { class_ := "note" },
+      form
+        (Todo.hidden ({} : Middleware.AntiForgeryOptions).paramName token
+          -- Both halves, because a grant is one client's at one resource and either alone would
+          -- name more than the row the button sits under.
+          ++ Todo.hidden "client" (some connection.client.value)
+          ++ Todo.hidden "resource" (some connection.resource.value)
+          ++ [(button ["Disconnect"] { class_ := "quiet" } : Node .flow)])
+        { method := "post", action := links.disconnectOne } ]
+
+/-- What this account has connected, and a way to take any of it back.
+
+Per-assistant because that is the answer to the question somebody actually arrives with, which is
+which of these still has access rather than how many do. The one that withdraws everything stays
+below it: an assistant that has stopped working is not always one the person can pick out of a
+list, and that is the case the blunt instrument is for. -/
+private def connectionsSection (token : Option String)
+    (connections : List Authorization.Connection) : List (Node .flow) :=
+  if connections.isEmpty then []
+  else
+    [ div
+        [ Html.label ["Assistants you have connected"],
+          ul (connections.map (connectionRow token)) { class_ := "connections" } ]
+        { class_ := "withdraw" } ]
+
+/-- Withdrawing every approval at once.
 
 Blunt as it is, it is what somebody stuck actually needs. An assistant that was approved and then
 stops working holds something only this server can take away, and until it is gone the assistant
@@ -62,13 +110,29 @@ private def disconnectSection (token : Option String) : Node .flow :=
         { method := "post", action := links.disconnect } ]
     { class_ := "withdraw" }
 
-def connectPage (endpoint : String) (token : Option String) (disconnected : Bool := false) :
-    String :=
+/-- What the page says about a withdrawal that has just happened. `none` when none has, which is
+every arrival at this page that was not the answer to pressing one of its buttons. -/
+inductive Withdrawal where
+  | all (count : Nat)
+  | one (name : String)
+  /-- Asked for, and there was nothing to withdraw: the row was stale, or it had been pressed
+  twice. Said out loud rather than silently re-rendering, since the two look identical. -/
+  | alreadyGone
+
+def connectPage (endpoint : String) (token : Option String)
+    (connections : List Authorization.Connection := [])
+    (withdrew : Option Withdrawal := none) : String :=
   let confirmation : List (Node .flow) :=
-    if disconnected then
-      [p ["Disconnected. Every assistant will ask again the next time you use it."]
+    match withdrew with
+    | none => []
+    | some (.all count) =>
+      [p [if count == 0 then "There was nothing connected."
+          else "Disconnected. Every assistant will ask again the next time you use it."]
         { class_ := "note" }]
-    else []
+    | some (.one name) =>
+      [p [s!"Disconnected {name}. It will ask again the next time you use it."] { class_ := "note" }]
+    | some .alreadyGone =>
+      [p ["That one was already disconnected."] { class_ := "note" }]
   cardPage "Use your own agent"
     ([ h2 ["Use your own agent"] ] ++ confirmation ++
     [ p ["Your own assistant can work on this list too, the same way the one here does."],
@@ -81,7 +145,7 @@ def connectPage (endpoint : String) (token : Option String) (disconnected : Bool
       -- tells it. Without the script the button is inert, which is why it names its source in an
       -- attribute rather than being wired up by position: a page that renders it is a page that
       -- has said what it copies.
-      p [button ["Copy"] { type := "button", class_ := "copy" } [("data-copy", "agent-prompt")]],
+      p [button ["Copy"] { type := "button", class_ := "quiet" } [("data-copy", "agent-prompt")]],
       p ["Nothing in it is secret, so it is safe to paste anywhere you would paste a web \
           address."] { class_ := "note" },
       Html.label ["What it will ask for"],
@@ -96,6 +160,7 @@ def connectPage (endpoint : String) (token : Option String) (disconnected : Bool
           p ["It needs no key beside it. Anything else it asks for, it will find for itself \
               at that address."] ]
         { class_ := "aside" } ]
+    ++ connectionsSection token connections
     ++ [disconnectSection token, p [a { href := links.index } ["Back to your list"]]])
     [connectScript]
 

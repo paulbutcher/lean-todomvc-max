@@ -22,6 +22,7 @@ route_table Routes
     signOut         := "/signout",
     connect         := "/connect",
     disconnect      := "/connect/disconnect",
+    disconnectOne   := "/connect/disconnect/one",
     chat            := "/chat",
     chatStatus      := "/chat/status",
     todosStatus     := "/todos/status",

@@ -93,6 +93,7 @@ here because there is only one and a handler has nothing to say about it. -/
 abbrev Scope := OAuth.Scope
 abbrev Rejection := OAuth.AccessToken.Rejection
 abbrev Claims := OAuth.Service.TokenClaims Todo.tenant
+abbrev Connection := OAuth.Service.Connection Todo.tenant
 
 -- The names the consent form carries its answer under, which the routes reading it back fix.
 export OAuth.ConsentForm (answerField approveValue)
@@ -139,6 +140,12 @@ structure Site where
   resourceMetadata : Json
   /-- Whether a presented token may act here, and as whom. -/
   verify : String → IO (Except Rejection Claims)
+  /-- What this account has connected and what each of them holds, newest use first. -/
+  connections : Todo.Account → IO (List Connection)
+  /-- Withdraws the one connection named, and reports whether there was one to withdraw. The
+  strings arrive from a form and are not checked against anything here: what is withdrawable is
+  the library's question, and it answers `false` for anything this account never granted. -/
+  revoke : Todo.Account → (client resource : String) → IO Bool
   /-- Withdraws every connection this account holds here, and reports how many there were. -/
   disconnect : Todo.Account → IO Nat
   /-- What a refusal at the MCP endpoint answers with, which is `challengeFor` at whatever this
@@ -152,16 +159,21 @@ def describing (base : BaseUrl) : Site :=
     resourceMetadata := Authorization.resourceMetadata base
     challenge := challengeFor base
     verify := fun _ => pure (.error .unknown)
+    connections := fun _ => pure []
+    revoke := fun _ _ _ => pure false
     disconnect := fun _ => pure 0 }
 
 def site (ports : OAuth.Service.Ports IO) (base : BaseUrl) : Site :=
   { describing base with
     verify := fun presented =>
       OAuth.Service.verify ports ⟨presented⟩ (Authorization.resource base)
+    connections := fun account => OAuth.Service.connections ports account
+    revoke := fun account client resource =>
+      OAuth.Service.revoke ports account ⟨client⟩ ⟨resource⟩
     disconnect := fun account => do
       let live ← OAuth.Service.connections ports account
       for connection in live do
-        OAuth.Service.revoke ports account connection.client connection.resource
+        discard <| OAuth.Service.revoke ports account connection.client connection.resource
       pure live.length }
 
 end Todo.Authorization

@@ -188,6 +188,61 @@ private def testTheConnectPageOffersAWayToWithdrawApprovals : IO Unit := do
   check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
     fun response => assertContains response Routes.links.disconnect
 
+private def readOnlyAgent : Authorization.Connection :=
+  connectionOf "agent-one" (some "Reader") [Authorization.read]
+
+private def fullAgent : Authorization.Connection :=
+  connectionOf "https://agent.example/metadata" (some "Editor") Authorization.scopes
+    (origin := .metadataDocument)
+
+private def pageWith (connections : List Authorization.Connection) : IO String := do
+  let live ← IO.mkRef connections
+  let browser ← browserFor (← memoryStore alice #[]) (← holdingConnections live)
+  pure (String.fromUTF8? (← browser.get Routes.links.connect) |>.getD "")
+
+/-- The page says which assistants hold something and what each of them can do, because deciding
+whether to withdraw one is deciding about that assistant rather than about the number of them.
+
+Counted against the page with nothing connected rather than against a number, because the page
+also explains both scopes before anything has been granted, and what a row adds is the claim
+being checked. -/
+private def testTheConnectPageSaysWhoHoldsWhat : IO Unit := do
+  let write := Authorization.describe Authorization.write
+  let occurrences (page : String) : Nat := (page.splitOn write).length - 1
+  let baseline := occurrences (← pageWith [])
+  checkEq "the assistant that can write is shown saying so" (baseline + 1)
+    (occurrences (← pageWith [fullAgent]))
+  checkEq "and the one that can only read is not" baseline
+    (occurrences (← pageWith [readOnlyAgent]))
+  let both ← pageWith [readOnlyAgent, fullAgent]
+  for name in ["Reader", "Editor"] do
+    checkEq s!"{name} is named" true (mentions both name)
+
+/-- Withdrawing one withdraws that one. The others are somebody's working assistants, and a
+button that took them too would be the blunt one wearing a narrower label. -/
+private def testDisconnectingOneLeavesTheRest : IO Unit := do
+  let live ← IO.mkRef [readOnlyAgent, fullAgent]
+  let browser ← browserFor (← memoryStore alice #[]) (← holdingConnections live)
+  discard <| browser.get Routes.links.connect
+  let response ← browser.post Routes.links.disconnectOne
+    [("client", readOnlyAgent.client.value), ("resource", readOnlyAgent.resource.value)]
+  assertContains response "Reader"
+  checkEq "the other one is still connected" ["Editor"]
+    ((← live.get).filterMap (·.clientName))
+
+/-- A withdrawal that names nothing is refused rather than read as naming everything.
+
+The two buttons sit on the same page and one of them does withdraw everything, so a form that
+lost its hidden fields would otherwise do the more destructive thing quietly. -/
+private def testDisconnectingNothingIsRefusedRatherThanTakenAsEverything : IO Unit := do
+  let live ← IO.mkRef [readOnlyAgent, fullAgent]
+  let browser ← browserFor (← memoryStore alice #[]) (← holdingConnections live)
+  discard <| browser.get Routes.links.connect
+  assertStatus (← browser.post Routes.links.disconnectOne []) "HTTP/1.1 400"
+  assertStatus (← browser.post Routes.links.disconnectOne [("client", "agent-one")])
+    "HTTP/1.1 400"
+  checkEq "and nothing was withdrawn" 2 (← live.get).length
+
 /-- And asking withdraws for whoever asked. An account is what a grant belongs to, so a button
 that withdrew for anybody else would leave the one who pressed it exactly as stuck.
 
@@ -221,6 +276,9 @@ def runAppTests : IO Unit :=
     testTheConnectPageNamesTheEndpointAnAgentReaches
     testTheConnectPageExplainsEveryScopeOnOffer
     testTheConnectPageServesWhatMakesTheCopyButtonWork
+    testTheConnectPageSaysWhoHoldsWhat
+    testDisconnectingOneLeavesTheRest
+    testDisconnectingNothingIsRefusedRatherThanTakenAsEverything
     testTheConnectPageOffersAWayToWithdrawApprovals
     testDisconnectingWithdrawsForTheAccountThatAsked
 

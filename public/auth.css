@@ -67,9 +67,27 @@ Released under Apache 2.0 license as described in the file LICENSE.
   background: #a03238;
 }
 
-/* Quieter than the red buttons, which are the ones that do something: this repeats what the
-   keyboard can already do, and a page whose loudest control is a convenience reads wrong. */
-.auth button.copy {
+/* One block per assistant, separated rather than boxed: what distinguishes the rows is which
+   assistant each is about, and a border around each would say they are cells of something. */
+.auth ul.connections {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auth ul.connections > li + li {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ededed;
+}
+
+.auth ul.connections p {
+  margin: 0 0 8px;
+}
+
+/* Quieter than the red buttons. Those are the ones that act on the list itself; these sit beside
+   what they are about, and a page whose loudest control is a convenience reads wrong. */
+.auth button.quiet {
   margin-top: 0;
   padding: 8px 16px;
   font-size: 14px;
@@ -78,7 +96,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
   border: 1px solid #d9d9d9;
 }
 
-.auth button.copy:hover {
+.auth button.quiet:hover {
   background: #f5f5f5;
 }
 

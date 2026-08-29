@@ -194,10 +194,18 @@ def listStatusHandler (store : Store) (account : Account) (params : Params)
 /-- The address of the MCP endpoint, and what to hand an assistant of your own so that it can
 set itself up against it. Behind the session like the rest of the application, though nothing on
 it is private: what it describes is this account's list, and somebody reading it has one. -/
-def connectHandler (authorization : Authorization.Site) (_account : Account)
-    (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
+private def connectView (authorization : Authorization.Site) (account : Account)
+    (req : Request Body.Stream) (withdrew : Option Withdrawal := none) :
+    ContextAsync (Response Body.Any) := do
+  -- Read after any withdrawal rather than before, so the page shows what is connected now and
+  -- not what was connected when the button was pressed.
+  let connections ← (authorization.connections account : IO _)
   connectPage authorization.endpoint ((req.extensions.get AntiForgeryToken).map (·.value))
-    |> Response.ok.html
+    connections withdrew |> Response.ok.html
+
+def connectHandler (authorization : Authorization.Site) (account : Account)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
+  connectView authorization account req
 
 /-- Withdraws every approval this account has given, and says so on the page it was asked from.
 
@@ -209,8 +217,39 @@ def disconnectHandler (authorization : Authorization.Site) (account : Account)
   let revoked ← (authorization.disconnect account : IO Nat)
   (Telemetry.info "every agent disconnected" [("oauth.connections_revoked", .int revoked)]
     : TelemetryT Async Unit).run (parentSpan req)
-  connectPage authorization.endpoint ((req.extensions.get AntiForgeryToken).map (·.value))
-    (disconnected := true) |> Response.ok.html
+  connectView authorization account req (some (.all revoked))
+
+/-- Withdraws the one approval the row named.
+
+Both fields are required and neither has a default. A missing `client` cannot be read as "all of
+them": that is the same request as the button beside this one, and a form that lost a hidden
+field would then withdraw everything somebody still wanted. -/
+def disconnectOneHandler (authorization : Authorization.Site) (account : Account)
+    (params : Params) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  let named := do
+    let client ← params.get "client"
+    let resource ← params.get "resource"
+    pure (client, resource)
+  match named with
+  | none =>
+    (Telemetry.info "one agent disconnect named nothing"
+      [("oauth.client_named", .str (if (params.get "client").isSome then "yes" else "no")),
+       ("oauth.resource_named", .str (if (params.get "resource").isSome then "yes" else "no"))]
+      : TelemetryT Async Unit).run (parentSpan req)
+    "Missing client or resource" |> Response.badRequest.text
+  | some (client, resource) => do
+    -- The name is read before the withdrawal, since afterwards there is no row left to read it
+    -- from and the page has to say which one went.
+    let name := (← (authorization.connections account : IO _)).find?
+      (fun c => c.client.value == client && c.resource.value == resource)
+      |>.bind (·.clientName) |>.getD "that assistant"
+    let withdrawn ← (authorization.revoke account client resource : IO Bool)
+    (Telemetry.info "one agent disconnected"
+      [("oauth.client", .str client), ("oauth.resource", .str resource),
+       ("oauth.was_connected", .str (if withdrawn then "yes" else "no"))]
+      : TelemetryT Async Unit).run (parentSpan req)
+    connectView authorization account req
+      (some (if withdrawn then .one name else .alreadyGone))
 
 /-- Ends this browser's session and clears the cookie carrying it. Clearing without revoking
 would leave a credential that still works in the hands of whoever recovers the cookie, and
@@ -422,6 +461,8 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
     .post patterns.signOut (guarded identity (signOutHandler identity)),
     .get patterns.connect (guarded identity (connectHandler authorization)),
     .post patterns.disconnect (guarded identity (disconnectHandler authorization)),
+    .post patterns.disconnectOne
+      (guarded identity fun account => withParams (disconnectOneHandler authorization account)),
     .post patterns.chat
       (guarded identity fun account => withParams (chatHandler store assistant account)),
     .get patterns.chatStatus
