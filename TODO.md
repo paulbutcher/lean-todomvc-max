@@ -13,7 +13,6 @@ Open items only. Anything settled has gone to the code, a comment, or a commit m
 ## Upstream
 
 - [leanprover/lean4#14934](https://github.com/leanprover/lean4/issues/14934): `URI.Query` lookups compare percent-encoded bytes, which are not canonical. lean-middleware works around it, so nothing here is blocked; if it lands, `Middleware.Params.lookup` can go back to delegating.
-- lean-authentication: `OAuth.AccessToken.Rejection` has no name for its cases, so `mcpHandler` logs "mcp token refused" and "mcp token holds no usable scope" without the value that decided either branch. Every resource server that logs a refusal wants the same names, so they belong beside the type rather than here.
 
 ## Deferred
 

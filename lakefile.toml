@@ -65,7 +65,7 @@ rev = "v0.13.0"
 [[require]]
 name = "authentication"
 git = "https://github.com/paulbutcher/lean-authentication"
-rev = "v0.14.1"
+rev = "v0.15.0"
 
 [[require]]
 name = "leanmigratePostgres"

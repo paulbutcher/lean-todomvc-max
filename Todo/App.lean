@@ -410,7 +410,8 @@ def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.S
       refuse site .unknown
   match ← (site.verify credential : IO _) with
   | .error rejection =>
-    (Telemetry.info "mcp token refused" [] : TelemetryT Async Unit).run (parentSpan req)
+    (Telemetry.info "mcp token refused" [("oauth.rejection", .str rejection.name)]
+      : TelemetryT Async Unit).run (parentSpan req)
     refuse site rejection
   | .ok claims =>
     -- A token that reaches no tool is refused rather than served an empty list. Serving one is
@@ -418,8 +419,12 @@ def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.S
     -- before it knew what to ask for has no way to learn that it should ask again; the challenge
     -- names the scopes it wants, which is what a client comes back for.
     if (Mcp.permitted claims.scopes).isEmpty then
-      (Telemetry.info "mcp token holds no usable scope" [] : TelemetryT Async Unit).run
-        (parentSpan req)
+      -- Spelled rather than left empty: a token carrying no scopes at all is the common way to
+      -- reach this, and an empty attribute reads as one that was never recorded.
+      let held := if claims.scopes.isEmpty then "none"
+        else Authentication.OAuth.Scope.render claims.scopes
+      (Telemetry.info "mcp token holds no usable scope" [("oauth.scopes_held", .str held)]
+        : TelemetryT Async Unit).run (parentSpan req)
       refuse site (.insufficientScope Authorization.scopes)
     else do
       let bytes ← MCP.StdHttp.collect req.body
