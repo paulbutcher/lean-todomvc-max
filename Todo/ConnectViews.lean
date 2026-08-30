@@ -45,7 +45,7 @@ def agentPrompt (endpoint : String) : String :=
 private def scopeLine (scope : Authentication.OAuth.Scope) : Node .listItem :=
   li [Todo.Authorization.describe scope]
 
-/-- Where the name came from, which a page showing one is required to say (AUTH-20.6.10).
+/-- Where the name came from, which a page showing one is required to say.
 
 A client that registered itself chose its own name and nothing stands behind it. One known by a
 URL is vouched for by that host and no further: the host is the part worth showing, because it is

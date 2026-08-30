@@ -19,7 +19,13 @@ open Todo
 #guard normalisedTitle "   " == none
 
 /-- Whatever survives normalisation is non-blank, so `none` is the only way for a blank title to
-reach `add` and `setTitle`, and each has to decide what to do about it. -/
+reach `add` and `setTitle`, and each has to decide what to do about it.
+
+`normalisedTitle raw` is what every handler puts a submitted title through, and the hypothesis
+`= some title` picks out the case in which it accepts one. `title.isEmpty = false` answers that
+the accepted string has at least one character in it, so the blank case cannot arrive by that
+route. `raw` is unconstrained, covering a title that is empty, whitespace only, or already clean,
+and the hypothesis is met by any of the last kind, so this is not vacuously true. -/
 theorem normalisedTitle_ne_blank {raw title : String} (h : normalisedTitle raw = some title) :
     title.isEmpty = false := by
   simp [normalisedTitle] at h

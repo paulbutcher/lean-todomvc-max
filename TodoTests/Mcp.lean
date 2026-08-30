@@ -35,15 +35,31 @@ claims for the tools that exist today. These state them for every token and ever
 the ones nobody has written yet: a tool added to the registry is covered the moment it compiles,
 which is what a table of cases cannot promise. -/
 
-/-- The whole of what the filter does, in both directions. Soundness alone would be satisfied by
-a server that offered nothing at all, so the other half is what makes the first mean anything. -/
+/-- An agent is offered a tool exactly when this application implements it and the agent's token
+holds the scope it needs. Soundness alone would be satisfied by a server that offered nothing at
+all, so the other half is what makes the first mean anything.
+
+`Mcp.permitted held` is the catalogue the endpoint answers a token holding `held` with, so the
+left of the `↔` says `entry` is among the tools that token is offered. On the right,
+`entry ∈ ChatTools.registry` says the entry is one the application actually implements, and
+`Mcp.scopeFor entry ∈ held` says the token holds the single scope that entry requires. Reading it
+in both directions: nothing outside the registry can be conjured into a catalogue, no tool whose
+scope is absent can appear in one, and no tool meeting both conditions is withheld. -/
 theorem permitted_iff (held : List Authentication.OAuth.Scope) (entry : ChatTools.Entry) :
     entry ∈ Mcp.permitted held ↔ entry ∈ ChatTools.registry ∧ Mcp.scopeFor entry ∈ held := by
   simp [Mcp.permitted, Array.mem_filter]
 
 /-- A grant that withheld `todos:write` reaches nothing that changes anything. This is what the
 consent page's second checkbox is for, and it holds however many tools are added and whatever
-they are called. -/
+they are called.
+
+`held` is the scope list carried by a token; `withheld` says `Authorization.write`, the
+`todos:write` scope, is not in it; `offered` says `entry` is one of the tools that token is
+handed. The conclusion is the registry's own flag for a tool that changes the list, so what is
+ruled out is not that such a tool fails when called but that it is ever put in front of the agent
+at all. The hypotheses are satisfiable rather than contradictory: a token holding only
+`Authorization.read` withholds `write` and is still offered every read-only tool, so this is not
+vacuously true. -/
 theorem nothing_mutates_without_write (held : List Authentication.OAuth.Scope)
     (entry : ChatTools.Entry) (withheld : Authorization.write ∉ held)
     (offered : entry ∈ Mcp.permitted held) : entry.mutates = false := by
@@ -54,7 +70,13 @@ theorem nothing_mutates_without_write (held : List Authentication.OAuth.Scope)
   · simpa using mutates
 
 /-- A token holding no scopes reaches no tool, which is what `mcpHandler` refuses on rather than
-serving an empty catalogue. -/
+serving an empty catalogue. An agent handed an empty catalogue has no way to tell a grant that is
+useless from a server that has nothing to offer, and will go on refreshing it.
+
+`Mcp.permitted []` is the catalogue computed for a token holding no scopes at all, and `#[]` is
+the empty array, so no entry survives the filter whatever the registry comes to hold. It is the
+case of `permitted_iff` in which the right-hand conjunct cannot be met, stated on its own because
+the handler branches on precisely this array being empty. -/
 theorem permitted_none : Mcp.permitted [] = #[] := by simp [Mcp.permitted]
 
 private def readOnly : String := "read-only-token"

@@ -21,9 +21,27 @@ open Telemetry (runTelemetry)
 open Routes
 open LLMClient (Msg ToolCall)
 
+/-- A tool call stored in a chat row is read back as the call that was stored. The id is the part
+with no tolerance at all: it is what a later tool result is matched against, so a call whose id
+came back altered would leave the model an answer belonging to a question it did not ask.
+
+`toolCallJson call` is the JSON object a call is written as and `toolCallOfJson` is the reader a
+stored row goes back through, so `= some call` says the reader both succeeds and returns the very
+call that was written. It is stated for every `ToolCall`, including one whose `input` is arbitrary
+JSON of any depth, which is why `toolCalls` is a `Json` column rather than text: nothing here
+depends on a string surviving a parse. -/
 theorem toolCallOfJson_toolCallJson (call : ToolCall) :
     toolCallOfJson (toolCallJson call) = some call := rfl
 
+/-- The same round trip for a whole turn's worth of calls. A model may call several tools at once,
+and an element dropped from the middle of the array would leave the transcript holding a result
+with no call for it to answer.
+
+`toolCallsJson calls` is the JSON array a turn's calls are written as, and `toolCallsOfJson` is
+the reader, which silently drops any element it cannot make a call out of. `= calls` says nothing
+is dropped and the order is kept, for every array including the empty one. That rests on
+`toolCallOfJson_toolCallJson`: it is what says no element the writer produced is one the reader
+rejects, so the `filterMap` filters nothing out. -/
 theorem toolCallsOfJson_toolCallsJson (calls : Array ToolCall) :
     toolCallsOfJson (toolCallsJson calls) = calls := by
   show (calls.map toolCallJson).filterMap toolCallOfJson = calls
@@ -32,7 +50,14 @@ theorem toolCallsOfJson_toolCallsJson (calls : Array ToolCall) :
 
 /-- What is written to a row is what is read back from it. A conversation is replayed to the
 model in full on every turn, so a message that comes back altered is not a display fault: it
-changes what the model is answering. -/
+changes what the model is answering.
+
+`ChatRow.ofMsg msg` spreads a message over the columns the table holds it in and `.toMsg` reads
+those columns back, so `= msg` says the pair is a round trip for every `Msg`: each of the three
+constructors is recovered from the role written for it, and the body, tool calls, tool-call id and
+error flag come back as they went in. The claim is one-sided by design. It says nothing about a
+row this application did not write, which is the case `toMsg` deliberately admits by reading an
+unrecognised role as a user turn. -/
 theorem toMsg_ofMsg (msg : Msg) : (ChatRow.ofMsg msg).toMsg = msg := by
   cases msg <;> simp [ChatRow.ofMsg, ChatRow.toMsg, toolCallsOfJson_toolCallsJson]
 

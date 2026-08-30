@@ -43,10 +43,13 @@ private def testEverySendAsksAgain : IO Unit := do
 indistinguishable from a link having been sent, so asking after somebody else's address teaches
 nothing about whether they have an account.
 
-Stated over the whole of `SignInOutcome` rather than over a list of the cases that matter today,
-so that a case added to the library has to be answered here rather than defaulting into a leak.
-The two it admits describe the request and not the requester: how often this address has been
-asked after, and whether what was typed parses. -/
+`Todo.Auth.messageFor` is what the sign-in form is answered with, and `.checkYourMail` is the
+answer that says nothing, so the hypothesis picks out every outcome the person is told anything
+else about. The conclusion admits exactly two of them, and both describe the request rather than
+the requester: `.throttled` says this address has been asked after recently, `.malformedAddress`
+says what was typed does not parse. `outcome` ranges over the whole of `SignInOutcome` rather than
+over a list of the cases that matter today, so a case added to the library has to be answered here
+rather than defaulting into a leak. -/
 theorem onlySpeaksAboutTheRequest (outcome : Authentication.SignInOutcome) :
     Todo.Auth.messageFor outcome ≠ .checkYourMail →
       outcome = .throttled ∨ outcome = .malformedAddress := by

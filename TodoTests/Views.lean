@@ -34,7 +34,13 @@ open Todo Html
 
 /-- A page carries an `hx-headers` attribute exactly when there is a token to put in it: never
 announcing a token it doesn't have, and never silently dropping one it does (which would make
-every mutation from that page fail anti-forgery validation). -/
+every mutation from that page fail anti-forgery validation).
+
+`csrfAttrs token` is the attribute list the page's root element is given, so `.isEmpty` answers
+`true` exactly when no `hx-headers` is emitted, and `token.isNone` answers `true` exactly when the
+page was handed no token to emit. Equating the two answers rather than implying one from the other
+is what rules out both failures at once, and `token` ranges over the whole of `Option String`, so
+neither case is assumed away. -/
 theorem csrfAttrs_nonempty_iff (token : Option String) :
     (csrfAttrs token).isEmpty = token.isNone := by
   cases token <;> rfl
