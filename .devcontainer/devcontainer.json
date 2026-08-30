@@ -9,9 +9,10 @@
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { "moby": false }
   },
 
-  // Store Claude's persistent state on the host
+  // Store Claude and Elan's persistent state on the host
   "mounts": [
-    "source=${localEnv:HOME}/.claude-devcontainer,target=/home/vscode/.claude,type=bind,consistency=cached"
+    "source=${localEnv:HOME}/.claude-devcontainer,target=/home/vscode/.claude,type=bind,consistency=cached",
+    "source=elan-shared,target=/home/vscode/.elan,type=volume"
   ],
 
   "containerEnv": {
