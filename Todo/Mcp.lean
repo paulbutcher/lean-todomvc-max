@@ -47,11 +47,21 @@ def toolDef (store : Store) (entry : ChatTools.Entry) :
     { name := entry.tool.name
       description := some entry.tool.description
       inputSchema := entry.tool.schema
+      outputSchema := entry.structured.map (·.schema)
       annotations := { readOnlyHint := some !entry.mutates } }
   run account input := do
-    match ← entry.run store account input with
-    | .ok text => pure (MCP.ToolResult.text text)
-    | .error message => pure (MCP.ToolResult.failure message)
+    match entry.structured with
+    -- The same answer twice: `structuredContent` for a client that reads the schema, and the text
+    -- block a client that does not still expects to find its answer in.
+    | some structured =>
+      match ← structured.run store account input with
+      | .ok value =>
+        pure { content := #[.text (Json.compress value)], structuredContent := some value }
+      | .error message => pure (MCP.ToolResult.failure message)
+    | none =>
+      match ← entry.run store account input with
+      | .ok text => pure (MCP.ToolResult.text text)
+      | .error message => pure (MCP.ToolResult.failure message)
 
 /-- The same tools the panel's own model is offered, from the same registry, so that the two
 cannot come to disagree about what exists, narrowed to what the presented token was granted.

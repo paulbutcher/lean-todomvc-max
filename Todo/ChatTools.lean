@@ -69,6 +69,16 @@ private def missing (name : String) : Except String String :=
 
 /-! ## The tools -/
 
+/-- The answer a tool gives as data: the code producing it, and the JSON Schema a client checks it
+against.
+
+`run` answers an object rather than the bare array the list reads as, because `structuredContent`
+may be any JSON value only from `2026-07-28` and must be an object in every older revision this
+server still speaks. -/
+structure Structured where
+  schema : Json
+  run : Store → Account → Json → TelemetryT Async (Except String Json)
+
 /-- One tool: what the model is offered, what running it does, and whether a call can leave the
 list different from how it found it.
 
@@ -83,6 +93,30 @@ structure Entry where
   tool : Tool
   mutates : Bool
   run : Store → Account → Json → TelemetryT Async (Except String String)
+  /-- Set for a tool that answers with data rather than prose. `run` above is derived from it
+  wherever it is set, so the text a model reads and the JSON a client validates cannot come to
+  disagree. -/
+  structured : Option Structured := none
+
+private def listResult (store : Store) (account : Account) (input : Json) :
+    TelemetryT Async (Except String Json) := do
+  let items ← store.list account (filterOf input)
+  pure (.ok (Json.mkObj [("todos", Json.arr (items.map itemJson))]))
+
+private def listSchema : Json :=
+  Json.mkObj
+    [ ("type", "object"),
+      ("properties", Json.mkObj
+        [ ("todos", Json.mkObj
+            [ ("type", "array"),
+              ("items", Json.mkObj
+                [ ("type", "object"),
+                  ("properties", Json.mkObj
+                    [ ("id", Json.mkObj [("type", "integer")]),
+                      ("title", Json.mkObj [("type", "string")]),
+                      ("done", Json.mkObj [("type", "boolean")]) ]),
+                  ("required", Json.arr #["id", "title", "done"]) ]) ]) ]),
+      ("required", Json.arr #["todos"]) ]
 
 /-- The id in every schema below is the one `list_todos` reports, and the descriptions say so.
 A model that has not listed yet has no id it could have invented, which is what keeps it from
@@ -92,8 +126,9 @@ def listTodos : Entry where
   tool :=
     { name := "list_todos"
       description :=
-        "List the signed-in person's todos. Returns a JSON array of objects with `id`, `title` " ++
-        "and `done`. Call this before any tool that takes an id, since ids come from here."
+        "List the signed-in person's todos. Returns an object with a `todos` array of objects " ++
+        "with `id`, `title` and `done`. Call this before any tool that takes an id, since ids " ++
+        "come from here."
       schema := schema
         [ ("filter", Json.mkObj
             [ ("type", "string"),
@@ -102,8 +137,8 @@ def listTodos : Entry where
         [] }
   mutates := false
   run store account input := do
-    let items ← store.list account (filterOf input)
-    pure (.ok (Json.compress (Json.arr (items.map itemJson))))
+    pure ((← listResult store account input).map Json.compress)
+  structured := some { schema := listSchema, run := listResult }
 
 def addTodo : Entry where
   tool :=

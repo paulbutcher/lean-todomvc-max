@@ -48,18 +48,27 @@ theorem toolCallsOfJson_toolCallsJson (calls : Array ToolCall) :
   rw [Array.filterMap_map]
   simp [Function.comp_def, toolCallOfJson_toolCallJson]
 
+/-- A message as the table can hold it: the structured half of a tool result is cleared, because
+no column keeps it. -/
+def stored : Msg → Msg
+  | .toolResult id output isError _ => .toolResult id output isError none
+  | msg => msg
+
 /-- What is written to a row is what is read back from it. A conversation is replayed to the
 model in full on every turn, so a message that comes back altered is not a display fault: it
 changes what the model is answering.
 
 `ChatRow.ofMsg msg` spreads a message over the columns the table holds it in and `.toMsg` reads
-those columns back, so `= msg` says the pair is a round trip for every `Msg`: each of the three
-constructors is recovered from the role written for it, and the body, tool calls, tool-call id and
-error flag come back as they went in. The claim is one-sided by design. It says nothing about a
-row this application did not write, which is the case `toMsg` deliberately admits by reading an
-unrecognised role as a user turn. -/
-theorem toMsg_ofMsg (msg : Msg) : (ChatRow.ofMsg msg).toMsg = msg := by
-  cases msg <;> simp [ChatRow.ofMsg, ChatRow.toMsg, toolCallsOfJson_toolCallsJson]
+those columns back, so `= stored msg` says the pair is a round trip for every `Msg` up to the one
+field no column holds: each of the three constructors is recovered from the role written for it,
+and the body, tool calls, tool-call id and error flag come back as they went in. `stored` clears
+a tool result's structured payload and changes nothing else, so the weakening reaches that field
+alone; it costs nothing, since `output` is that same answer as text and a replayed turn is one
+whose answer the model has already been given. The claim is one-sided by design. It says nothing
+about a row this application did not write, which is the case `toMsg` deliberately admits by
+reading an unrecognised role as a user turn. -/
+theorem toMsg_ofMsg (msg : Msg) : (ChatRow.ofMsg msg).toMsg = stored msg := by
+  cases msg <;> simp [ChatRow.ofMsg, ChatRow.toMsg, stored, toolCallsOfJson_toolCallsJson]
 
 /-! ## The tools -/
 
@@ -128,8 +137,8 @@ private def testListTodosReportsIdsAsJson : IO Unit := do
     | throw (IO.userError "list_todos refused a call it should have answered")
   let .ok parsed := Json.parse listed
     | throw (IO.userError s!"list_todos did not return JSON: {listed}")
-  let .ok items := parsed.getArr?
-    | throw (IO.userError s!"list_todos did not return an array: {listed}")
+  let .ok items := parsed.getObjVal? "todos" >>= Json.getArr?
+    | throw (IO.userError s!"list_todos did not return a `todos` array: {listed}")
   checkEq "only the completed one" 1 items.size
   checkEq "carrying the id the other tools take" (some (2 : Int))
     (((items[0]?.getD Json.null).getObjVal? "id" >>= Json.getInt?).toOption)
@@ -155,7 +164,7 @@ private def testToolsCannotReachAnotherAccount : IO Unit := do
   discard <| runTool store "delete_todo" [("id", Json.ofNat 1)] (account := bob)
   checkEq "alice still has hers" #[("alpha", false)] (← titlesOf store)
   let listed ← runTool store "list_todos" [] (account := bob)
-  checkEq "and bob sees none of it" (some "[]") listed.toOption
+  checkEq "and bob sees none of it" (some "{\"todos\":[]}") listed.toOption
 
 /-! ## Turns -/
 

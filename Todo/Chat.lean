@@ -60,7 +60,9 @@ def ChatRow.ofMsg : Msg → ChatRow
   | .assistant text calls =>
     { role := "assistant", body := text, toolCalls := toolCallsJson calls, toolCallId := "",
       isError := false }
-  | .toolResult id output isError =>
+  -- A structured result is not stored: `output` is the same answer, and a replayed turn is one
+  -- the model has already been told the answer to.
+  | .toolResult id output isError _ =>
     { role := "tool", body := output, toolCalls := Json.arr #[], toolCallId := id, isError }
 
 /-- A role outside the three `ofMsg` writes is read as a user turn. Refusing it instead would

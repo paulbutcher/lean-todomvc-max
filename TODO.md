@@ -18,7 +18,6 @@ Open items only. Anything settled has gone to the code, a comment, or a commit m
 
 - **Prune client registrations.** DCR is the only way in now that CIMD is withdrawn, and Claude registers one per connection. `OAuth.Service.pruneClients` and `purgeExpired` are both offered and neither is called. Deferred because it needs a scheduler the stack hasn't got, to bound a table holding single figures.
 - Rate limiting on `/oauth/register` (AUTH-20.18.2).
-- `structuredContent` and `outputSchema` for `list_todos`.
 - IAM database authentication instead of a self-managed password. Weighed and deferred as more work than the outage justified.
 
 ## Known, and not a defect

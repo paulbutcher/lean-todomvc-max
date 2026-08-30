@@ -126,12 +126,20 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
       -- costs nothing that is not already being waited on, and `parent` is what keeps the spans
       -- the store opens underneath the turn's own rather than loose at the root.
       let tools := ChatTools.registry.map fun entry =>
+        let count (ok : Bool) : IO Unit :=
+          if entry.mutates && ok then
+            assistant.turns.advance account fun state =>
+              { state with mutations := state.mutations + 1 }
+          else pure ()
         { tool := entry.tool
           run := fun input => do
             let result ← Async.block ((entry.run store account input).run parent)
-            if entry.mutates && result.isOk then
-              assistant.turns.advance account fun state =>
-                { state with mutations := state.mutations + 1 }
+            count result.isOk
+            pure result
+          -- `converseLoop` runs this instead of `run` where it is set, so a call is counted once.
+          runStructured := entry.structured.map fun structured => fun input => do
+            let result ← Async.block ((structured.run store account input).run parent)
+            count result.isOk
             pure result }
       let result ← LLMClient.converseLoop provider tools history { maxIterations, onProgress }
       match result with

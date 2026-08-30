@@ -295,6 +295,24 @@ private def testCallsReachTheStoreAsTheTokensAccount : IO Unit := do
   checkEq "the todo is alice's" #["gamma"] (← titlesOf store)
   checkEq "and nobody else's" #[] (← titlesOf store bob)
 
+/-- A tool that declares an output schema answers structured content, and the text block beside it
+is that same answer. One client reads the structured half and another reads the text, so a tool
+rendering the two separately could drift without either of them seeing anything wrong.
+
+Stated over the registry, so a tool given a schema later is covered without this being touched. -/
+private def testAStructuredAnswerAgreesWithTheTextBesideIt : IO Unit := do
+  let store ← memoryStore alice #[{ id := 1, title := "alpha", completed := false }]
+  for entry in ChatTools.registry do
+    if entry.structured.isSome then
+      let name := entry.tool.name
+      let result ← Async.block
+        (runTelemetry ((Mcp.toolDef store entry).run alice (Json.mkObj [])))
+      let some value := result.structuredContent
+        | throw (IO.userError s!"{name} declares a schema but answered nothing structured")
+      let some (MCP.Content.text text) := result.content[0]?
+        | throw (IO.userError s!"{name} answered no text block to go with it")
+      checkEq s!"{name} renders one answer twice" (some value) (Json.parse text).toOption
+
 /-! ## Asking the person -/
 
 /-- What the consent page is handed, which the library builds from the prompt and the request it
@@ -399,6 +417,7 @@ def runMcpTests : IO Unit := do
   testAReadOnlyTokenReachesOnlyTheReadingTools
   testAReadOnlyTokenCannotChangeAnything
   testCallsReachTheStoreAsTheTokensAccount
+  testAStructuredAnswerAgreesWithTheTextBesideIt
   testTheConsentPageSaysWhoIsAskingAndWhereTheAnswerGoes
   testALoopbackClientIsCalledOut
   testEachScopeIsItsOwnAnswer

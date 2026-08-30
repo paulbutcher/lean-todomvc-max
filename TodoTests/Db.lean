@@ -137,7 +137,7 @@ Every field the table holds is in here, so a column read back into the wrong one
 private def shapeOf : LLMClient.Msg → String × String × String × Bool
   | .user text => ("user", text, "", false)
   | .assistant text calls => ("assistant", text, Json.compress (toolCallsJson calls), false)
-  | .toolResult id output isError => ("tool", output, id, isError)
+  | .toolResult id output isError _ => ("tool", output, id, isError)
 
 /-- The transcript survives the trip through the columns it is kept in, tool calls and all. A
 failed call is among them: it is the one message whose meaning is carried by something other than
