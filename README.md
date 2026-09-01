@@ -77,12 +77,6 @@ export BEDROCK_MODEL=<model-or-inference-profile-id>
 
 An agent of your own can reach the same tools the panel has, over [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent at the endpoint and it will find its own way in. Instructions for helping the agent to do so at `/connect`.
 
-### Troubleshooting
-
-- Agents register dynamically here. Anthropic's hosted client metadata is declined, because the deployed function has no egress to fetch a document over.
-- A Lambda function URL renames `WWW-Authenticate`, so the challenge on a 401 reaches clients under another name. Claude finds the metadata by convention regardless; a stricter client may not.
-- claude.ai keeps a connector's OAuth state against the server URL, and deleting the connector does not clear it. A connection that has gone wrong is fixed by a new URL and by nothing else.
-
 ## Deploying
 
 [template.yaml](template.yaml) defines an AWS [SAM](https://aws.amazon.com/serverless/sam/) deployment: a VPC with no egress, an RDS Postgres, the function behind a public function URL, interface endpoints for SES and Bedrock, secrets, a log group, a dashboard and its saved queries.
