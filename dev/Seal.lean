@@ -40,16 +40,55 @@ private def field? : String → Option SecretField
 private def usage : String :=
   String.intercalate "\n"
     [ "usage:",
-      "  seal key                        a fresh sealing key, as hex",
-      "  seal <provider> <field> < file  the sealed secret, as a line of configuration",
+      "  seal key                          a fresh sealing key, as hex",
+      "  seal <provider> <field> < file    the sealed secret, as a line of configuration",
+      "  seal check <provider> <field>     whether a sealed value opens, read from stdin",
       "",
       "fields: client-secret, signing-key (Apple's .p8)",
       "reads AUTH_SEALING_KEY and AUTH_SEALING_KEY_ID" ]
+
+/-- Says whether a configured value can be opened by the key this is holding, and never what it
+opens to. Which of the failures it was is the whole point: a deployment cannot tell a secret
+sealed under another key from one sealed for another provider, because the page a failed sign-in
+renders says nothing about either.
+
+Safe to run against production configuration. The plaintext is not printed, and nothing here
+reaches the deployment: a sealed value and the key that opens it is all it reads. -/
+private def check (provider : String) (field : SecretField) : IO UInt32 := do
+  let raw := (← (← IO.getStdin).readToEnd).trimAscii.toString
+  let some stored := StoredSecret.parse raw
+    | IO.println "not a sealed secret: this is not a value `seal` produced"
+      pure 1
+  match stored with
+  | .external reference =>
+    IO.println s!"an external reference ({reference}), which this deployment cannot resolve"
+    pure 1
+  | .sealed value =>
+    let ring : Oidc.SealingRing := { current := ← sealingKey }
+    let ref : SecretRef := { tenant := Todo.tenant, provider := ⟨provider⟩, field }
+    match ← Oidc.openSecret ring ref value with
+    | .ok opened =>
+      IO.println s!"opens, {opened.size} bytes, under key {value.keyId.value}"
+      pure 0
+    | .error (.unknownKey keyId) =>
+      IO.println s!"sealed under key {keyId.value}, and AUTH_SEALING_KEY_ID is {ring.current.keyId.value}"
+      pure 1
+    | .error .keyUnusable =>
+      IO.println "AUTH_SEALING_KEY is not 32 bytes"
+      pure 1
+    | .error _ =>
+      IO.println s!"will not open: either AUTH_SEALING_KEY is not the key it was sealed under, \
+        or it was sealed for something other than {provider}/{field.name}"
+      pure 1
 
 /-- Nothing here writes anywhere. What it prints is what a deployment sets, which keeps the one
 copy of a provider's secret in the hands of whoever ran this. -/
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["check", provider, rawField] =>
+    let some field := field? rawField
+      | throw (IO.userError s!"{rawField} is not a field this knows; {usage}")
+    check provider field
   | ["key"] =>
     match ← RandomBytes.draw 32 with
     | .error detail => throw (IO.userError s!"no random bytes: {detail}")

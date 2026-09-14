@@ -73,11 +73,11 @@ export AWS_REGION=<region>
 export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
-## Signing in with Google, Apple or GitHub
+## Signing in with Google, Apple or GitHub (optional)
 
-Sign-in is by emailed link out of the box. Each of the three providers is offered as well wherever its client id is configured, and a deployment that configures none is unchanged.
+To enable federated sign-in, register an OAuth client with each provider you want and give it a redirect URI of `<base-url>/t/todomvc/federated/<provider>/callback`, matching exactly: providers compare it as a string. Apple needs a Services ID, a team id, a key id and a `.p8` signing key, because its client secret is minted per request rather than held.
 
-Register an OAuth client with each provider you want, and give it a redirect URI of `<base-url>/t/todomvc/federated/<provider>/callback`, matching exactly: providers compare it as a string. Apple needs a Services ID, a team id, a key id and a `.p8` signing key, because its client secret is minted per request rather than held.
+Registering with each: [Google](https://developers.google.com/identity/openid-connect/openid-connect), [Apple](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple), [GitHub](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app).
 
 A provider's secret is never configured in the clear. `lake exe seal` mints the key that seals them and seals one at a time, reading it from standard input so that it reaches neither the process list nor a shell history:
 
