@@ -115,10 +115,12 @@ Answer yes to "Allow SAM CLI IAM role creation" and "Function Function Url has n
 
 A sign-in link has to name an origin, and the function URL is not knowable until the function exists, so deploy a second time with `BaseUrl` set to what the first deploy printed (either run `sam deploy --guided` a second time or edit the created `samconfig.toml`).
 
-The stack generates the sealing key rather than taking one, so federated providers are configured on that second deploy too: read the key back, seal each secret against it, and set the parameters. The redirect URIs you registered need the same base URL, so both wait on the same thing.
+The stack generates the sealing key rather than taking one, so federated providers are configured on that second deploy too: read the key back, seal each secret against it, and set the parameters. The redirect URIs you register need the same base URL, so both wait on the same thing, and the first deploy prints both in its outputs: `FederatedCallback` is what to register, with `google`, `apple` or `github` in place of `<provider>`, and `SealingKeySecret` is where the key is.
 
 ```
-aws secretsmanager get-secret-value --secret-id <the SealingKey arn from the stack> \
+aws secretsmanager get-secret-value \
+  --secret-id "$(aws cloudformation describe-stacks --stack-name todomvc \
+    --query "Stacks[0].Outputs[?OutputKey=='SealingKeySecret'].OutputValue" --output text)" \
   --query SecretString --output text
 ```
 

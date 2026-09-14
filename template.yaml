@@ -686,3 +686,16 @@ Outputs:
   Dashboard:
     Description: Where the telemetry is read.
     Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${TelemetryDashboard}"
+
+  SealingKeySecret:
+    Description: >-
+      Where the key that opens provider secrets lives. Read it with
+      `aws secretsmanager get-secret-value --secret-id <this> --query SecretString --output text`,
+      then seal each provider's secret against it with `lake exe seal`.
+    Value: !Ref SealingKey
+
+  FederatedCallback:
+    Description: >-
+      What to register with each provider, substituting google, apple or github for <provider>.
+      Providers compare it as a string, so it has to match to the character.
+    Value: !Sub "${FunctionUrl.FunctionUrl}t/todomvc/federated/<provider>/callback"
