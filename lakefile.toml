@@ -9,23 +9,23 @@ warningAsError = true
 [[require]]
 name = "awsLambda-http"
 git = "https://github.com/paulbutcher/lean-aws-lambda"
-rev = "v0.4.0"
+rev = "v0.4.1"
 subDir = "http"
 
 [[require]]
 name = "leanpostgres"
 git = "https://github.com/paulbutcher/leanpostgres"
-rev = "v0.7.2"
+rev = "v0.7.3"
 
 [[require]]
 name = "telemetry"
 git = "https://github.com/paulbutcher/lean-telemetry"
-rev = "v0.5.0"
+rev = "v0.5.1"
 
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.9.1"
+rev = "v0.9.0"
 
 [[require]]
 name = "markdown"
@@ -35,7 +35,7 @@ rev = "v0.7.1"
 [[require]]
 name = "LLMClient"
 git = "https://github.com/paulbutcher/lean-llmclient"
-rev = "v0.9.1"
+rev = "v0.9.3"
 
 [[require]]
 name = "MCP"
@@ -45,7 +45,7 @@ rev = "v0.3.0"
 [[require]]
 name = "leancrypto"
 git = "https://github.com/paulbutcher/leancrypto"
-rev = "v0.3.1"
+rev = "v0.4.1"
 
 [[require]]
 name = "htmx"
@@ -55,34 +55,34 @@ rev = "v0.6.1"
 [[require]]
 name = "routing"
 git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.7.1"
+rev = "v0.7.2"
 
 [[require]]
 name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.13.0"
+rev = "v0.14.0"
 
 [[require]]
 name = "authentication"
 git = "https://github.com/paulbutcher/lean-authentication"
-rev = "v0.15.0"
+rev = "v0.15.2"
 
 [[require]]
 name = "leanmigratePostgres"
 git = "https://github.com/paulbutcher/leanmigrate"
-rev = "v0.5.1"
+rev = "v0.6.0"
 subDir = "postgres"
 
 [[require]]
 name = "middleware-cookiestore"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.13.0"
+rev = "v0.14.0"
 subDir = "cookiestore"
 
 [[require]]
 name = "middleware-tracing"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.13.0"
+rev = "v0.14.0"
 subDir = "tracing"
 
 [[lean_lib]]

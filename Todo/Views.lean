@@ -7,8 +7,8 @@ module
 
 public import Html
 public import Htmx
-public import Crypto.Sha256
-public import Codec.Hex
+public import Leancrypto.Sha2
+public import Leancrypto.Codec.Hex
 public import Todo.Store
 public import Todo.Links
 public import Todo.ChatViews
@@ -136,7 +136,7 @@ anywhere but the rows themselves would be wrong on at least one of them. -/
 def listDigest (allItems : Array Item) : String :=
   let canonical := allItems.foldl (init := "") fun acc item =>
     acc ++ s!"{item.id}\x1f{item.completed}\x1f{item.title}\x1e"
-  Codec.Hex.encodeString (Crypto.Sha256.hashUtf8 canonical)
+  Leancrypto.Codec.Hex.encodeString (Leancrypto.Sha256.hashUtf8 canonical)
 
 /-- How often the page asks whether the list still matches what it is showing.
 

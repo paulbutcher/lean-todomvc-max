@@ -2,28 +2,31 @@
 	"name": "Ubuntu",
 	"build": { "dockerfile": "Dockerfile" },
 
-  // Shares the host's Docker daemon, so images built here are the ones `sam deploy` pushes.
-  // Microsoft publishes no moby-cli for Ubuntu resolute, but Docker's own repo carries a
-  // resolute build of the CE client, which is all this needs: the daemon is the host's.
-  "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { "moby": false }
-  },
+  // Runs on the host before the container exists, so that the bind mount below has
+  // a directory to attach to. Without it Docker invents one owned by root, and the
+  // container's `vscode` user cannot then write its own configuration.
+  "initializeCommand": "mkdir -p ${localEnv:HOME}/.claude-devcontainer",
 
-  // Store Claude and Elan's persistent state on the host
+  // Claude's state is per-person and stays on the host. `.elan` is a named volume
+  // shared with every other project using this setup, so a Lean toolchain is
+  // downloaded once per machine rather than once per project.
   "mounts": [
     "source=${localEnv:HOME}/.claude-devcontainer,target=/home/vscode/.claude,type=bind,consistency=cached",
     "source=elan-shared,target=/home/vscode/.elan,type=volume"
   ],
+
+  // Both run once the mounts are in place, which is what lets setup.sh write into
+  // the `.elan` volume. `claude update` keeps the container current between image
+  // rebuilds, which it otherwise would not be: ~/.local is not mounted.
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "claude update || true",
 
   "containerEnv": {
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
     "GIT_CONFIG_COUNT": "1",
     "GIT_CONFIG_KEY_0": "safe.directory",
     "GIT_CONFIG_VALUE_0": "${containerWorkspaceFolder}",
-    "PGHOST": "host.docker.internal",
-    "PGPORT": "5432",
-    "PGUSER": "leantodomvc",
-    "PGDATABASE": "leantodomvc"
+    "PGHOST": "host.docker.internal"
   },
 
 	"customizations": {
