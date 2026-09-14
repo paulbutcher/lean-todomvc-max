@@ -40,6 +40,7 @@ private def refusalText : SignInRefusal → String
   | .signup .notInvited => "This list is invitation only, and you were not invited."
   | .signup .domainNotAllowed => "This list does not accept that address's domain."
   | .accountDeactivated => "That account is closed."
+  | .addressNotVerified => "That provider has not verified that address."
 
 private def codeField (context : PageContext) (action label id : String) : Node .flow :=
   form
