@@ -1,3 +1,7 @@
+  # The assistant reaches Bedrock the same way mail reaches SES, and for the same reason: a turn
+  # is the largest traffic this application carries, and it has an endpoint to stay inside.
+  # How the function reaches SES. The NAT gateway would carry it, but an interface endpoint keeps
+  # the traffic on the AWS network and off a path that is charged by the gigabyte.
 # Copyright (c) 2026 Paul Butcher. All rights reserved.
 # Released under Apache 2.0 license as described in the file LICENSE.
 
@@ -90,6 +94,93 @@ Resources:
       CidrBlock: 10.0.2.0/24
       AvailabilityZone: !Select [1, !GetAZs ""]
 
+  # Federated sign-in is the only thing here that talks to a host AWS does not run: a provider's
+  # discovery document, its key set, and the token exchange. None of those has an interface
+  # endpoint to resolve to, so they need a public egress path, which is what everything down to
+  # `Subnet2RouteTableAssociation` builds.
+  #
+  # The function stays in the private subnets. Egress for it means a route to a NAT gateway, and
+  # the NAT gateway is what holds the public address; a Lambda function never has one of its own.
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public in that its route table reaches the internet gateway. Nothing is deployed into it but
+  # the NAT gateway.
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    # A route to a gateway cannot be created before the gateway is attached to the VPC.
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  NatEip:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  # One, rather than one per availability zone. A second would remove the only shared point of
+  # failure this adds, and it would double a standing charge to carry a few requests per sign-in.
+  # What it costs as it stands is that a sign-in served from the second zone crosses zones to get
+  # out.
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnet
+
+  # The private subnets would otherwise use the VPC's main route table, which carries the local
+  # route and nothing else. Both of them are moved onto this one.
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  Subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  Subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet2
+      RouteTableId: !Ref PrivateRouteTable
+
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -101,10 +192,8 @@ Resources:
           ToPort: 5432
           CidrIp: !GetAtt VPC.CidrBlock
 
-  # How the function reaches SES. This stack has no internet gateway and no NAT gateway, so an
-  # interface endpoint is not the cheaper of two ways out here; it is the way that does not mean
-  # building a public egress path, and paying a standing charge for it, to carry one API call per
-  # sign-in. The traffic never leaves the AWS network either way.
+  # How the function reaches SES. The NAT gateway would carry it, but an interface endpoint keeps
+  # the traffic on the AWS network and off a path that is charged by the gigabyte.
   #
   # If the stack fails to create this, the two things to check are that SES publishes an API
   # endpoint in the region:
@@ -137,10 +226,8 @@ Resources:
       SubnetIds: [!Ref Subnet1, !Ref Subnet2]
       SecurityGroupIds: [!Ref SesEndpointSecurityGroup]
 
-  # The assistant reaches Bedrock the same way mail reaches SES, and for the same reason: this VPC
-  # has no route out, so a signed request to `bedrock-runtime.<region>.amazonaws.com` resolves
-  # here or it resolves nowhere. Without it a turn fails on connect, minutes into a deployment
-  # that otherwise looks healthy.
+  # The assistant reaches Bedrock the same way mail reaches SES, and for the same reason: a turn is
+  # the largest traffic this application carries, and it has an endpoint to stay inside.
   #
   # Bedrock has two endpoint services and this is the one that carries inference: `.bedrock` is
   # the control plane, and an endpoint for it would deploy cleanly and still refuse every turn.
@@ -217,9 +304,9 @@ Resources:
       # until the first rotation and then fails every connection, a week after a deployment and
       # nowhere near it, with `password authentication failed` and nothing to say why.
       #
-      # So the password is held here and does not rotate. It never leaves a VPC with no egress,
-      # and the two secrets below are held on the same terms for the same reason. Rotating it
-      # would mean the function reading it at runtime, which this VPC would need an endpoint for.
+      # So the password is held here and does not rotate, and the two secrets below are held on the
+      # same terms for the same reason. What contains it is the database having no public address
+      # and only this VPC reaching its port. Rotating it would mean reading it at runtime.
       ManageMasterUserPassword: false
       MasterUsername: postgres
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabasePassword}:SecretString}}"
@@ -340,8 +427,8 @@ Resources:
           OTEL_SERVICE_NAME: todomvc
           # Telemetry leaves as JSON on stdout, which the runtime forwards to CloudWatch Logs.
           # That path belongs to the Lambda service rather than to this function's network
-          # interface, so it is the one way out of a VPC with no egress, and it is why there is no
-          # collector here. Reaching anything beyond CloudWatch is a subscription filter's job,
+          # interface, so it crosses neither the NAT gateway nor this VPC, and it is why there is
+          # no collector here. Reaching anything beyond CloudWatch is a subscription filter's job,
           # and that also runs outside this VPC.
           #
           # `flat_json` rather than `otlp_json` because Logs Insights has to be able to address a

@@ -79,7 +79,7 @@ An agent of your own can reach the same tools the panel has, over [MCP](https://
 
 ## Deploying
 
-[template.yaml](template.yaml) defines an AWS [SAM](https://aws.amazon.com/serverless/sam/) deployment: a VPC with no egress, an RDS Postgres, the function behind a public function URL, interface endpoints for SES and Bedrock, secrets, a log group, a dashboard and its saved queries.
+[template.yaml](template.yaml) defines an AWS [SAM](https://aws.amazon.com/serverless/sam/) deployment: a VPC with egress through a NAT gateway, an RDS Postgres, the function behind a public function URL, interface endpoints for SES and Bedrock, secrets, a log group, a dashboard and its saved queries.
 
 You need AWS credentials, a Docker that can build `linux/arm64`, and an SES identity for the address you will send from. Give its domain SPF, DKIM, DMARC and an MX record, and while the account is in the SES sandbox, verify the recipients too.
 
@@ -100,6 +100,7 @@ For the assistant, set `BedrockModel` to an id enabled in your region. Most curr
 aws bedrock-runtime converse --region <region> --model-id "<id>" \
   --messages '[{"role":"user","content":[{"text":"hello"}]}]'
 ```
+
 **Troubleshooting**
 
 The Homebrew formula builds against Homebrew's Python, whose `pyexpat` can be linked against a newer `libexpat` than macOS ships; the import that fails takes the `build` subcommand down with it, and what you see is `Error: No such command 'build'` rather than anything about the loader.
