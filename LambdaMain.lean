@@ -101,7 +101,8 @@ def authSettings : IO Todo.Auth.Settings := do
       senderAddress := address
       replyTo := ← replyToAddress
       transport := Todo.Auth.refreshing awsCredentials fun credentials =>
-        Authentication.Ses.transport { region, credentials } }
+        Authentication.Ses.transport { region, credentials }
+      federation := ← Todo.Federation.fromEnv }
 
 /-- The panel, signed with the same execution role everything else here is.
 
@@ -163,9 +164,13 @@ def main : IO Unit := AwsLambda.serve do
   let pool ← Postgres.Pool.create conninfo poolSize
   runTelemetry (spanning "migrate" (liftM (Postgres.Pool.withConnAsync pool Todo.migrate)))
   let sessions ← sessionStore
-  let site := Todo.Auth.site pool (← authSettings)
+  let settings ← authSettings
+  -- Built here rather than inside `site` because the discovery document and the key set are
+  -- cached in them, and a cold start is the one place this process may pay for filling a cache.
+  let site := Todo.Auth.site pool settings (← (settings.federation.mapM Todo.Federation.ports : IO _))
   let assistant ← assistant pool
   -- A function URL is reachable over https only, so TLS termination is a given here.
   pure (AwsLambda.Http.handler
     (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions
-      site.authorization (Authentication.OAuth.Http.routes site.oauth) (https := true)))
+      site.authorization (Authentication.OAuth.Http.routes site.oauth) site.config.providers
+      (https := true)))

@@ -10,6 +10,7 @@ public import TodoTests.Chat
 public import TodoTests.Auth
 public import TodoTests.AuthMail
 public import TodoTests.Db
+public import TodoTests.Federation
 public import TodoTests.Logs
 public import TodoTests.Mcp
 public import TodoTests.Store
@@ -30,6 +31,7 @@ def runAll : IO Unit := do
   runMcpTests
   runTracingTests
   runLogsTests
+  runFederationTests
   runDbTests
   IO.println "All tests passed."
 

@@ -76,17 +76,25 @@ def memoryStore (owner : Account) (initial : Array Item) : IO Store := do
   }
 
 /-- Answers for every request with the same account, so the handlers can be driven without a
-database standing behind the sign-in flow. -/
+database standing behind the sign-in flow.
+
+No linked identity, because a provider is the one thing here that cannot be stood in for: what
+links one is a round trip to the provider, and `linked` answering from nothing would describe an
+account no flow could have produced. -/
 def fixedIdentity (account : Account) (revocations : IO.Ref Nat) : Auth.Identity where
   of := fun _ => pure (some account)
   address := fun _ => pure (some s!"{account.value}@example.com")
   signOut := fun _ _ => revocations.modify (· + 1)
+  linked := fun _ => pure []
+  unlink := fun _ _ => pure (.error .notThisAccount)
 
 /-- Nobody is signed in, which is what every request arrives as before it has been. -/
 def anonymousIdentity : Auth.Identity where
   of := fun _ => pure none
   address := fun _ => pure none
   signOut := fun _ _ => pure ()
+  linked := fun _ => pure []
+  unlink := fun _ _ => pure (.error .notThisAccount)
 
 /-! ## The assistant -/
 

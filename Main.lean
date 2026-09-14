@@ -71,15 +71,20 @@ def main : IO Unit := Async.block do
     runTelemetry (spanning "migrate" (liftM (Postgres.Pool.withConnAsync pool Todo.migrate)))
     let assistant ← assistant pool
     let sessions ← Middleware.MemoryStore.new
+    -- Federated sign-in is configured or it is not, here as in the deployment: a developer with
+    -- no provider registered gets the magic link and no buttons.
+    let federation ← Todo.Federation.fromEnv
     let site := Todo.Auth.site pool
       { pepper := developmentPepper
         baseUrl := ⟨s!"http://localhost:{port}"⟩
         senderAddress := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩
-        transport := Authentication.EmailTransport.console }
+        transport := Authentication.EmailTransport.console
+        federation }
+      (← (federation.mapM Todo.Federation.ports : IO _))
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
     let server ← serve addr
       (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions
-        site.authorization (Authentication.OAuth.Http.routes site.oauth))
+        site.authorization (Authentication.OAuth.Http.routes site.oauth) site.config.providers)
     IO.println s!"Listening on http://localhost:{port}"
     IO.println s!"MCP endpoint at http://localhost:{port}/mcp"
     server.waitShutdown

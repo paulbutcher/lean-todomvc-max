@@ -73,6 +73,27 @@ export AWS_REGION=<region>
 export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
+## Signing in with Google, Apple or GitHub
+
+Sign-in is by emailed link out of the box. Each of the three providers is offered as well wherever its client id is configured, and a deployment that configures none is unchanged.
+
+Register an OAuth client with each provider you want, and give it a redirect URI of `<base-url>/t/todomvc/federated/<provider>/callback`, matching exactly: providers compare it as a string. Apple needs a Services ID, a team id, a key id and a `.p8` signing key, because its client secret is minted per request rather than held.
+
+A provider's secret is never configured in the clear. `lake exe seal` mints the key that seals them and seals one at a time, reading it from standard input so that it reaches neither the process list nor a shell history:
+
+```
+lake exe seal key                              # once, then keep it
+export AUTH_SEALING_KEY=<that> AUTH_SEALING_KEY_ID=1
+printf %s "<the secret>" | lake exe seal google client-secret
+lake exe seal apple signing-key < AuthKey_XXXX.p8
+```
+
+What it prints is what the corresponding variable is set to: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and for Apple `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_SIGNING_KEY`. A client id that is set with anything else about it missing or unreadable stops the application from starting, rather than quietly dropping that provider from the sign-in page.
+
+`/account` is where somebody connects a provider to the account they are already signed in as, and disconnects one. That is not the same operation as signing in with it: it is the only way to use a provider that hides the address, Apple's Hide My Email in particular, since there is then no address to recognise an existing account by. Disconnecting the last way into an account is refused.
+
+Apple cannot be exercised locally. It answers by posting the browser back rather than redirecting, which requires the state cookie to say `SameSite=None`, and browsers honour that only on a `Secure` cookie. Google and GitHub work against `http://localhost` unchanged.
+
 ## Bringing your own agent (MCP support)
 
 An agent of your own can reach the same tools the panel has, over [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent at the endpoint and it will find its own way in. Instructions for helping the agent to do so at `/connect`.
@@ -93,6 +114,13 @@ sam deploy --guided --stack-name todomvc
 Answer yes to "Allow SAM CLI IAM role creation" and "Function Function Url has no authentication. Is this okay?". `MailFrom` is the only parameter without a default.
 
 A sign-in link has to name an origin, and the function URL is not knowable until the function exists, so deploy a second time with `BaseUrl` set to what the first deploy printed (either run `sam deploy --guided` a second time or edit the created `samconfig.toml`).
+
+The stack generates the sealing key rather than taking one, so federated providers are configured on that second deploy too: read the key back, seal each secret against it, and set the parameters. The redirect URIs you registered need the same base URL, so both wait on the same thing.
+
+```
+aws secretsmanager get-secret-value --secret-id <the SealingKey arn from the stack> \
+  --query SecretString --output text
+```
 
 For the assistant, set `BedrockModel` to an id enabled in your region. Most current models are reachable only through a cross-region inference profile, which `aws bedrock list-inference-profiles` lists. A Marketplace-served model enables itself on first invocation, and that invocation must come from a principal holding `aws-marketplace:Subscribe`, so prime it once from an administrative identity:
 

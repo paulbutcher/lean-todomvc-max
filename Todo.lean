@@ -6,6 +6,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Todo.Tenant
+public import Todo.Federation
 public import Todo.Auth
 public import Todo.AuthMail
 public import Todo.AuthViews
@@ -19,6 +20,7 @@ public import Todo.Migrations
 public import Todo.Links
 public import Todo.Views
 public import Todo.ConnectViews
+public import Todo.AccountViews
 public import Todo.App
 
 public section

@@ -1,6 +1,6 @@
 name = "todomvc"
 version = "0.1.0"
-defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests", "migrate", "logs"]
+defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests", "migrate", "logs", "seal"]
 testDriver = "tests"
 
 [leanOptions]
@@ -65,7 +65,7 @@ rev = "v0.14.0"
 [[require]]
 name = "authentication"
 git = "https://github.com/paulbutcher/lean-authentication"
-rev = "v0.16.0"
+rev = "v0.16.2"
 
 [[require]]
 name = "leanmigratePostgres"
@@ -105,6 +105,11 @@ root = "TodoTests"
 name = "migrate"
 srcDir = "dev"
 root = "Migrate"
+
+[[lean_exe]]
+name = "seal"
+srcDir = "dev"
+root = "Seal"
 
 [[lean_exe]]
 name = "logs"

@@ -217,7 +217,8 @@ def accountFooter (address : Option String) : Node .flow :=
       ++ (match address with
           | none => []
           | some address => [(p [s!"Signed in as {address}"] : Node .flow)])
-      ++ [ (Htmx.button ["Sign out"]
+      ++ [ (p [a { href := links.account } ["Your account"]] : Node .flow),
+           (Htmx.button ["Sign out"]
               { class_ := "sign-out", hxPost := links.signOut } : Node .flow) ])
     { class_ := "info" }
 

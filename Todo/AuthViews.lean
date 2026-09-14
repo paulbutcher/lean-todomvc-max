@@ -9,6 +9,7 @@ public import Html
 public import AuthenticationHttp
 public import Middleware
 public import Todo.Authorization
+public import Todo.Federation
 public import Todo.Tenant
 public import Todo.Views
 
@@ -73,10 +74,59 @@ private def codeAside (context : PageContext) (expanded : Bool := false) : List 
                codeField context action "Code from the mail" "emailed-code" ])
       { class_ := "aside", open_ := expanded } ]
 
-def pages : Authentication.Http.Pages where
+/-- Where a federated sign-in begins, which is the library's route rather than one of this
+application's. `returnTo` rides as a query parameter because starting one is a `GET`. -/
+def federatedStart (id : Authentication.ProviderId) (returnTo : Option String := none) : String :=
+  let path := Authentication.BaseUrl.tenantPath Todo.tenant ++ "/federated/" ++ id.value
+  match returnTo with
+  | none => path
+  | some target =>
+    path ++ "?" ++ (Std.Http.URI.Query.empty.insert "returnTo" target).toRawString
+
+/-- The providers on offer, below the form rather than above it: every account here has an
+address, and a provider is the shortcut rather than the way in. Nothing renders where a
+deployment configured none. -/
+private def providerChoices (providers : List Authentication.ProviderConfig)
+    (returnTo : Option String) : List (Node .flow) :=
+  if providers.isEmpty then [] else
+    (p ["or"] { class_ := "divider" } : Node .flow) ::
+      providers.map fun provider =>
+        (p [a { href := federatedStart provider.id returnTo, class_ := "provider" }
+            [s!"Continue with {Todo.Federation.label provider.id}"]] : Node .flow)
+
+/-- What the federated routes answer for a tenant or a provider this deployment does not have.
+
+Separate from the magic link's `unknown`, which describes a link rather than an address: getting
+here means the URL named something that was never on offer, and there is no new one to ask for. -/
+def notFoundPage : String :=
+  cardPage "Not found"
+    [ h2 ["Not found"],
+      p ["There is nothing at that address."],
+      p [a { href := signInPath } ["Sign in"]] ]
+
+/-- Every way a federated sign-in can fail, under one heading.
+
+The library answers them all alike on purpose: which refusal it was describes the person rather
+than this application, so distinguishing them here would answer a question nobody signed in is
+entitled to ask. What is left to say is what to do instead, and both ways out are offered because
+which one applies depends on whether they have an account already. -/
+def federationRefusedPage : String :=
+  cardPage "That sign-in could not be completed"
+    [ h2 ["That sign-in could not be completed"],
+      p ["Signing in with that provider did not work. It may have been cancelled, or it may have
+          told us nothing we could sign you in with."] { class_ := "warn" },
+      p ["Signing in with your email address works whether or not you have used a provider
+          before."],
+      p [a { href := signInPath } ["Sign in with your email address"]] ]
+
+/-- The providers are a parameter rather than something read from `context`, because
+`PageContext` carries no provider information: which ones a tenant offers is the tenant config's,
+and the library leaves rendering them entirely here. -/
+def pages (providers : List Authentication.ProviderConfig := []) :
+    Authentication.Http.Pages where
   signIn context :=
     cardPage s!"Sign in to {context.tenantName}"
-      [ h2 ["Sign in"],
+      ([ h2 ["Sign in"],
         p ["Enter your address and we will mail you a link. There is no password to remember."],
         form
           ([ (Html.label ["Email address"] { for_ := "email" } : Node .flow),
@@ -88,6 +138,7 @@ def pages : Authentication.Http.Pages where
             ++ hidden "returnTo" context.returnTo
             ++ [(button ["Send me a link"] : Node .flow)])
           { method := "post", action := context.action } ]
+        ++ providerChoices providers context.returnTo)
   -- Two shapes, chosen by the message rather than by the outcome, which is what keeps this from
   -- being an oracle of its own: `Todo.Auth.messageFor` has already decided what may be
   -- distinguished, and everything it holds back arrives here as `checkYourMail` and gets the

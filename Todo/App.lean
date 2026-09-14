@@ -15,6 +15,7 @@ public import Todo.Store
 public import Todo.Links
 public import Todo.Views
 public import Todo.ConnectViews
+public import Todo.AccountViews
 public import Todo.ChatTurn
 public import Todo.Mcp
 
@@ -251,6 +252,60 @@ def disconnectOneHandler (authorization : Authorization.Site) (account : Account
     connectView authorization account req
       (some (if withdrawn then .one name else .alreadyGone))
 
+/-- What can get into this account, and the controls that change it.
+
+Read after any change rather than before, for the reason the connect page is: the page has to show
+what is linked now and not what was linked when the button was pressed. -/
+private def accountView (identity : Identity)
+    (providers : List Authentication.ProviderConfig) (account : Account)
+    (req : Request Body.Stream) (notice : Option AccountNotice := none) :
+    ContextAsync (Response Body.Any) := do
+  let address ← (identity.address account : IO _)
+  let linked ← (identity.linked account : IO _)
+  accountPage address providers linked ((req.extensions.get AntiForgeryToken).map (·.value)) notice
+    |> Response.ok.html
+
+def accountHandler (identity : Identity) (providers : List Authentication.ProviderConfig)
+    (account : Account) (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
+  accountView identity providers account req
+
+/-- Takes one provider away from this account.
+
+A credential that is not this account's and one that never existed are the same answer, which is
+the library's choice repeated here: telling them apart would let somebody guessing identifiers
+learn which ones are real.
+
+The name is read before the removal, because afterwards there is no credential left to read it
+from and the page has to say which one went. -/
+def accountUnlinkHandler (identity : Identity)
+    (providers : List Authentication.ProviderConfig) (account : Account) (params : Params)
+    (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  match params.get "credential" with
+  | none =>
+    (Telemetry.info "unlink named no credential" [] : TelemetryT Async Unit).run (parentSpan req)
+    "Missing credential" |> Response.badRequest.text
+  | some raw =>
+    let name := (← (identity.linked account : IO _)).find? (·.id.value == raw)
+      |>.bind (fun credential =>
+        match credential.descriptor with
+        | .federatedIdentity identity =>
+          (providers.find? (·.issuer == identity.issuer)).map (Todo.Federation.label ·.id)
+        | .emailAddress _ => none)
+      |>.getD "that provider"
+    let outcome ← (identity.unlink account ⟨raw⟩ : IO _)
+    let notice : AccountNotice := match outcome with
+      | .ok () => .disconnected name
+      | .error .lastWayIn => .lastWayIn
+      | .error .notThisAccount => .alreadyGone
+    (Telemetry.info "identity unlink"
+      [("auth.provider", .str name),
+       ("auth.outcome", .str (match outcome with
+         | .ok () => "unlinked"
+         | .error .lastWayIn => "refused, last way in"
+         | .error .notThisAccount => "not this account"))]
+      : TelemetryT Async Unit).run (parentSpan req)
+    accountView identity providers account req (some notice)
+
 /-- Ends this browser's session and clears the cookie carrying it. Clearing without revoking
 would leave a credential that still works in the hands of whoever recovers the cookie, and
 revoking without clearing would send it on every request until it expired. -/
@@ -445,7 +500,8 @@ private def guarded (identity : Identity)
 
 def app (identity : Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site)
-    (oauth : List (Routing.Route Routing.Result) := []) : StatelessHandler :=
+    (oauth : List (Routing.Route Routing.Result) := [])
+    (providers : List Authentication.ProviderConfig := []) : StatelessHandler :=
   let byId (handler : Store → Account → Nat → Request Body.Stream →
       ContextAsync (Response Body.Any)) := fun id =>
     guarded identity (handler store · id ·)
@@ -464,6 +520,9 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
     .post patterns.toggleAll (guarded identity (toggleAllHandler store)),
     .delete patterns.clearCompleted (guarded identity (clearCompletedHandler store)),
     .post patterns.signOut (guarded identity (signOutHandler identity)),
+    .get patterns.account (guarded identity (accountHandler identity providers)),
+    .post patterns.accountUnlink
+      (guarded identity fun account => withParams (accountUnlinkHandler identity providers account)),
     .get patterns.connect (guarded identity (connectHandler authorization)),
     .post patterns.disconnect (guarded identity (disconnectHandler authorization)),
     .post patterns.disconnectOne
@@ -528,6 +587,7 @@ consent form that cannot be posted or a token endpoint that refuses every client
 def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (store : Store)
     (assistant : Assistant) (sessions : σ) (authorization : Authorization.Site)
     (oauth : Authentication.OAuth.Http.Routes := { browser := [], client := [] })
+    (providers : List Authentication.ProviderConfig := [])
     (https : Bool := false) : StatelessHandler :=
   let client := toHandler
     ([ .post patterns.mcp (mcpHandler store authorization),
@@ -556,6 +616,7 @@ def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (st
           notModified,
           file "public"])
     (split auth client
-      (Middleware.apply [antiForgery] (app identity store assistant authorization oauth.browser)))
+      (Middleware.apply [antiForgery]
+        (app identity store assistant authorization oauth.browser providers)))
 
 end Todo

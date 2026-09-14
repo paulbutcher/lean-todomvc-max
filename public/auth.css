@@ -222,3 +222,59 @@ Released under Apache 2.0 license as described in the file LICENSE.
 .auth button + button {
   margin-left: 10px;
 }
+
+/* What separates the emailed link from the providers. A word rather than a rule, because the two
+   are alternatives and a rule alone reads as the end of the page. */
+.auth .divider {
+  margin: 24px 0 16px;
+  font-size: 14px;
+  color: #777;
+  text-align: center;
+}
+
+/* Styled as the buttons are, because that is what they do here: each one starts a sign-in. The
+   `a` stays an `a` because starting one is a `GET`, and a form per provider would say otherwise. */
+.auth a.provider {
+  display: block;
+  padding: 12px;
+  font-size: 16px;
+  color: #4d4d4d;
+  text-align: center;
+  text-decoration: none;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+}
+
+.auth a.provider:hover {
+  background: #f5f5f5;
+}
+
+.auth p + p > a.provider {
+  margin-top: 0;
+}
+
+/* One row per provider, the name on the left and whatever can be done about it on the right.
+   Laid out rather than listed because each row is a thing and a control over it, not prose. */
+.auth ul.providers {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auth ul.providers > li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid #ededed;
+}
+
+.auth ul.providers .provider-name {
+  flex: 1;
+  color: #4d4d4d;
+}
+
+.auth ul.providers form {
+  margin: 0;
+}

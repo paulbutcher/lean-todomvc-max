@@ -20,6 +20,8 @@ route_table Routes
     toggleAll       := "/todos/toggle-all",
     clearCompleted  := "/todos/clear-completed",
     signOut         := "/signout",
+    account         := "/account",
+    accountUnlink   := "/account/unlink",
     connect         := "/connect",
     disconnect      := "/connect/disconnect",
     disconnectOne   := "/connect/disconnect/one",

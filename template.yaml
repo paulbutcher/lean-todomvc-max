@@ -67,6 +67,67 @@ Parameters:
       Names the pepper that digested a credential, and is recorded alongside each one. Change it
       whenever the pepper secret changes, or the record of which key was used stops being true.
 
+  SealingKeyId:
+    Type: String
+    Default: "1"
+    Description: >-
+      Names the key a provider secret was sealed under, and travels inside the sealed value
+      itself. Change it when the sealing key changes, and reseal every secret: a value sealed
+      under a key this deployment no longer holds cannot be opened, and the provider it belongs
+      to stops working.
+
+  # The three federated providers. Each is offered only where its client id is set, so a
+  # deployment that wants none leaves all of these alone and gets the emailed link by itself.
+  #
+  # The secrets are parameters rather than Secrets Manager entries because they are already
+  # ciphertext: `lake exe seal` binds each to this tenant, this provider and this field before it
+  # ever reaches here, and what opens them is `SealingKey`, which is a secret and is generated
+  # below. A sealed value in a parameter file discloses nothing without it.
+  GoogleClientId:
+    Type: String
+    Default: ""
+    Description: The OAuth client id Google issued, or empty to not offer Google.
+
+  GoogleClientSecret:
+    Type: String
+    Default: ""
+    Description: Google's client secret, as `lake exe seal google client-secret` renders it.
+
+  AppleClientId:
+    Type: String
+    Default: ""
+    Description: >-
+      The Services ID registered with Apple, which is what Apple calls a client id, or empty to
+      not offer Apple. Sign in with Apple cannot be exercised over plain http, so this is one a
+      deployment can have and a development machine cannot.
+
+  AppleTeamId:
+    Type: String
+    Default: ""
+    Description: The Apple developer team the Services ID belongs to.
+
+  AppleKeyId:
+    Type: String
+    Default: ""
+    Description: Which of the team's private keys the signing key below is.
+
+  AppleSigningKey:
+    Type: String
+    Default: ""
+    Description: >-
+      Apple's `.p8`, as `lake exe seal apple signing-key < key.p8` renders it. A key rather than
+      a secret because Apple's client secret is minted per request and never stored.
+
+  GitHubClientId:
+    Type: String
+    Default: ""
+    Description: The OAuth app client id GitHub issued, or empty to not offer GitHub.
+
+  GitHubClientSecret:
+    Type: String
+    Default: ""
+    Description: GitHub's client secret, as `lake exe seal github client-secret` renders it.
+
 Resources:
   # Both the function and the database sit in this VPC so the database needs no public address.
   VPC:
@@ -352,6 +413,19 @@ Resources:
         ExcludePunctuation: true
         ExcludeCharacters: "ghijklmnopqrstuvwxyz"
 
+  # Opens every sealed provider secret, and so must not live where those secrets do. It is
+  # generated here rather than supplied, which makes the first deploy the one that mints it:
+  # read it back, seal each provider's secret against it, and deploy again with the results.
+  SealingKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Provider secret sealing key for ${AWS::StackName}"
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludeUppercase: true
+        ExcludePunctuation: true
+        ExcludeCharacters: "ghijklmnopqrstuvwxyz"
+
   # Declared rather than left to Lambda to create on first use, so that retention is this
   # template's decision and so that the saved queries and the dashboard have something to be
   # written against. The name is the one Lambda would have chosen anyway, which is what keeps
@@ -420,6 +494,16 @@ Resources:
           SESSION_KEY: !Sub "{{resolve:secretsmanager:${SessionKey}:SecretString}}"
           AUTH_PEPPER: !Sub "{{resolve:secretsmanager:${AuthPepper}:SecretString}}"
           AUTH_PEPPER_KEY_ID: !Ref PepperKeyId
+          AUTH_SEALING_KEY: !Sub "{{resolve:secretsmanager:${SealingKey}:SecretString}}"
+          AUTH_SEALING_KEY_ID: !Ref SealingKeyId
+          GOOGLE_CLIENT_ID: !Ref GoogleClientId
+          GOOGLE_CLIENT_SECRET: !Ref GoogleClientSecret
+          APPLE_CLIENT_ID: !Ref AppleClientId
+          APPLE_TEAM_ID: !Ref AppleTeamId
+          APPLE_KEY_ID: !Ref AppleKeyId
+          APPLE_SIGNING_KEY: !Ref AppleSigningKey
+          GITHUB_CLIENT_ID: !Ref GitHubClientId
+          GITHUB_CLIENT_SECRET: !Ref GitHubClientSecret
           BASE_URL: !Ref BaseUrl
           MAIL_FROM: !Ref MailFrom
           MAIL_REPLY_TO: !Ref MailReplyTo

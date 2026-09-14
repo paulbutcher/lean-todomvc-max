@@ -8,12 +8,14 @@ module
 public import Authentication
 public import Authentication.Instances
 public import AuthenticationHttp
+public import AuthenticationOidcHttp
 public import AuthenticationPostgres
 public import Postgres
 public import Middleware
 public import Todo.AuthMail
 public import Todo.Authorization
 public import Todo.AuthViews
+public import Todo.Federation
 public import Todo.Tenant
 
 public section
@@ -44,6 +46,9 @@ structure Settings where
   no-reply address a deployment usually sends from is nowhere anybody reads. -/
   replyTo : Option EmailAddress := none
   transport : EmailTransport IO
+  /-- The providers this deployment offers, and the key their secrets are sealed under. `none`
+  is the deployment that offers the magic link and nothing else. -/
+  federation : Option Todo.Federation.Settings := none
 
 /-- What a refusal is allowed to say.
 
@@ -105,7 +110,11 @@ def tenantConfig (settings : Settings) (t : TenantId) : TenantConfig t where
   -- in has to survive signing in: the allowlist is matched against the path alone, so the
   -- request's own parameters ride along and the person lands back on the consent page rather
   -- than on the list, with the agent still waiting.
-  returnToAllowlist := ["/", "/active", "/completed", Routes.links.oauthAuthorize]
+  returnToAllowlist :=
+    ["/", "/active", "/completed", Routes.links.account, Routes.links.oauthAuthorize]
+  -- Empty unless a deployment named one, which is what makes the federated routes answer
+  -- `not found` for every provider rather than being mounted conditionally.
+  providers := (settings.federation.map (·.providers)).getD []
 
 structure Site where
   ports : Service.Ports IO
@@ -113,13 +122,21 @@ structure Site where
   serves need them directly rather than through `authorization`. -/
   oauthPorts : OAuth.Service.Ports IO
   authorization : Todo.Authorization.Site
+  /-- What a federated sign-in is made of, and `none` where none is offered. Held here rather
+  than rebuilt per request because the discovery document and the key set are cached inside it. -/
+  oidc : Option (Oidc.SignInPorts IO)
   settings : Settings
 
-def site (pool : _root_.Postgres.Pool) (settings : Settings) : Site :=
+/-- The federated ports are handed in rather than built here, because they hold caches and this
+is not `IO`: what a process must do once, the call site can then be seen doing once.
+`Todo.Federation.ports` is what builds them. -/
+def site (pool : _root_.Postgres.Pool) (settings : Settings)
+    (oidc : Option (Oidc.SignInPorts IO) := none) : Site :=
   let oauthPorts := Todo.Authorization.ports pool { current := settings.pepper }
   { ports := ports pool settings
     oauthPorts
     authorization := Todo.Authorization.site oauthPorts settings.baseUrl
+    oidc
     settings }
 
 namespace Site
@@ -130,7 +147,7 @@ def config (s : Site) : TenantConfig Todo.tenant := tenantConfig s.settings Todo
 is the library's requirement and costs nothing here: there is only ever one. -/
 def http (s : Site) : Authentication.Http.Config where
   ports := s.ports
-  pages := Todo.pages
+  pages := Todo.pages (config s).providers
   tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
 
 /-- The authorisation server's own endpoints, at the origin rather than below the tenant's path:
@@ -150,6 +167,20 @@ def oauth (s : Site) : Authentication.OAuth.Http.Config where
   oauth := fun t =>
     if h : t = Todo.tenant then pure (some (h ▸ Todo.Authorization.config s.settings.baseUrl))
     else pure none
+
+/-- The federated sign-in routes, empty where no provider is configured. The library refuses a
+provider the tenant does not name, so mounting them regardless would answer the same way; this
+keeps a deployment that offers none from carrying routes for them at all. -/
+def federatedRoutes (s : Site) : List (Routing.Route Routing.Result) :=
+  match s.oidc with
+  | none => []
+  | some oidc =>
+    Authentication.OidcHttp.routes
+      { ports := s.ports
+        oidc
+        tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
+        refusedPage := Todo.federationRefusedPage
+        notFoundPage := Todo.notFoundPage }
 
 end Site
 
@@ -179,6 +210,17 @@ private def signOut (s : Site) (req : Request Body.Stream) (account : Todo.Accou
     if session.current then
       discard <| Service.revokeSession s.ports account session.id
 
+/-- Every way into this account other than its address, which is what the account page shows and
+what `unlink` takes one of away from. -/
+private def linked (s : Site) (account : Todo.Account) : IO (List (Credential Todo.tenant)) :=
+  Service.linkedIdentities s.ports account
+
+/-- Refusing to remove the last way in is the library's, not this application's: an account whose
+address can no longer be mailed and whose only provider has gone is one nobody can reach. -/
+private def unlink (s : Site) (account : Todo.Account) (credential : CredentialId Todo.tenant) :
+    IO (Except Service.UnlinkRefusal Unit) :=
+  Service.unlinkIdentity s.ports account credential
+
 /-- What the application needs of a signed-in person, as operations rather than as the `Site`
 they are reached through. Same reason `Todo.Store` is a record: the handlers can then be driven
 without a database, and what happens against a real one is settled where it happens.
@@ -188,11 +230,15 @@ structure Identity where
   of : Request Body.Stream → IO (Option Todo.Account)
   address : Todo.Account → IO (Option String)
   signOut : Request Body.Stream → Todo.Account → IO Unit
+  linked : Todo.Account → IO (List (Credential Todo.tenant))
+  unlink : Todo.Account → CredentialId Todo.tenant → IO (Except Service.UnlinkRefusal Unit)
 
 def Site.identity (s : Site) : Identity where
   of := identify s
   address := addressOf s
   signOut := signOut s
+  linked := linked s
+  unlink := unlink s
 
 /-- Rebuilds the transport from `fresh` for every send.
 
@@ -203,7 +249,15 @@ def refreshing {α : Type} (fresh : IO α) (transport : α → EmailTransport IO
     EmailTransport IO where
   send mail := do (transport (← fresh)).send mail
 
-/-- The sign-in routes, ready to be mounted. -/
-def Site.handler (s : Site) : StatelessHandler := Authentication.Http.handler s.http
+/-- Everything served under the tenant's own prefix, which is both libraries' routes over one
+router. Two handlers would not do: the prefix is what the application splits on, so whichever ran
+second would never be reached.
+
+The fallback is the federated routes' page rather than the magic link's `unknown`, which is about
+a link that has been used or has expired and would describe the wrong thing for a path that names
+no route at all. -/
+def Site.handler (s : Site) : StatelessHandler :=
+  Routing.toHandler (Authentication.Http.routes s.http ++ s.federatedRoutes)
+    (fun _ => Response.notFound.html Todo.notFoundPage)
 
 end Todo.Auth
