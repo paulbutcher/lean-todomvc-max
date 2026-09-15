@@ -73,27 +73,6 @@ export AWS_REGION=<region>
 export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
-## Signing in with Google, Apple or GitHub (optional)
-
-To enable federated sign-in, register an OAuth client with each provider you want and give it a redirect URI of `<base-url>/t/todomvc/federated/<provider>/callback`, matching exactly: providers compare it as a string. Apple needs a Services ID, a team id, a key id and a `.p8` signing key, because its client secret is minted per request rather than held.
-
-Registering with each: [Google](https://developers.google.com/identity/openid-connect/openid-connect), [Apple](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple), [GitHub](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app).
-
-A provider's secret is never configured in the clear. `auth-seal`, which [lean-authentication](https://github.com/paulbutcher/lean-authentication) ships, mints the key that seals them and seals one at a time, reading it from standard input so that it reaches neither the process list nor a shell history. The tenant is `todomvc` and the key id is whatever `AUTH_SEALING_KEY_ID` will be set to:
-
-```
-lake exe auth-seal key                         # once, then keep it
-export AUTH_SEALING_KEY=<that>
-printf %s "<the secret>" | lake exe auth-seal seal todomvc google client-secret 1
-lake exe auth-seal seal todomvc apple signing-key 1 < AuthKey_XXXX.p8
-```
-
-What it prints is what the corresponding variable is set to: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and for Apple `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_SIGNING_KEY`. A client id that is set with anything else about it missing or unreadable stops the application from starting, rather than quietly dropping that provider from the sign-in page.
-
-`/account` is where somebody connects a provider to the account they are already signed in as, and disconnects one. That is not the same operation as signing in with it: it is the only way to use a provider that hides the address, Apple's Hide My Email in particular, since there is then no address to recognise an existing account by. Disconnecting the last way into an account is refused.
-
-Apple cannot be exercised locally. It answers by posting the browser back rather than redirecting, which requires the state cookie to say `SameSite=None`, and browsers honour that only on a `Secure` cookie. Google and GitHub work against `http://localhost` unchanged.
-
 ## Bringing your own agent (MCP support)
 
 An agent of your own can reach the same tools the panel has, over [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent at the endpoint and it will find its own way in. Instructions for helping the agent to do so at `/connect`.
@@ -151,6 +130,27 @@ OTEL_EXPORTER_CONSOLE_FORMAT=flat_json lake exe TodoMVC | lake exe logs
 ```
 
 The `Dashboard` stack output is a console URL for the dashboard the template creates: platform metrics, server latency, p99 by route, slowest requests, and errors. Beside it, under Logs Insights, the template saves the steps of an analysis loop as query definitions, from slowest routes down to a single trace read end to end.
+
+## Signing in with Google, Apple or GitHub (optional)
+
+To enable federated sign-in, register an OAuth client with each provider you want and give it a redirect URI of `<base-url>/t/todomvc/federated/<provider>/callback`, matching exactly: providers compare it as a string. Apple needs a Services ID, a team id, a key id and a `.p8` signing key, because its client secret is minted per request rather than held.
+
+Registering with each: [Google](https://developers.google.com/identity/openid-connect/openid-connect), [Apple](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple), [GitHub](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app).
+
+A provider's secret is never configured in the clear. `auth-seal`, which [lean-authentication](https://github.com/paulbutcher/lean-authentication) ships, mints the key that seals them and seals one at a time, reading it from standard input so that it reaches neither the process list nor a shell history. The tenant is `todomvc` and the key id is whatever `AUTH_SEALING_KEY_ID` will be set to:
+
+```
+lake exe auth-seal key                         # once, then keep it
+export AUTH_SEALING_KEY=<that>
+printf %s "<the secret>" | lake exe auth-seal seal todomvc google client-secret 1
+lake exe auth-seal seal todomvc apple signing-key 1 < AuthKey_XXXX.p8
+```
+
+What it prints is what the corresponding variable is set to: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and for Apple `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_SIGNING_KEY`. A client id that is set with anything else about it missing or unreadable stops the application from starting, rather than quietly dropping that provider from the sign-in page.
+
+`/account` is where somebody connects a provider to the account they are already signed in as, and disconnects one. That is not the same operation as signing in with it: it is the only way to use a provider that hides the address, Apple's Hide My Email in particular, since there is then no address to recognise an existing account by. Disconnecting the last way into an account is refused.
+
+Apple cannot be exercised locally. It answers by posting the browser back rather than redirecting, which requires the state cookie to say `SameSite=None`, and browsers honour that only on a `Secure` cookie. Google and GitHub work against `http://localhost` unchanged.
 
 ## License
 
