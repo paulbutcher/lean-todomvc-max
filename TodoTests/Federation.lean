@@ -27,8 +27,7 @@ private def sealedSecret : String :=
    ngQGZSuINZdPlKSrupAaGw"
 
 private def sealingKey : List (String × String) :=
-  [ ("AUTH_SEALING_KEY",
-     "83b607c86f9d008638a928236bfaa078327175be9a659b8826711e4b49fa8256"),
+  [ ("AUTH_SEALING_KEY", "g7YHyG-dAIY4qSgja_qgeDJxdb6aZZuIJnEeS0n6glY"),
     ("AUTH_SEALING_KEY_ID", "sealing-2026-01") ]
 
 private def threw (attempt : IO α) : IO Bool := do

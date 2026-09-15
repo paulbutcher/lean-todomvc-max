@@ -1,6 +1,6 @@
 name = "todomvc"
 version = "0.1.0"
-defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests", "migrate", "logs", "seal"]
+defaultTargets = ["TodoMVC", "bootstrap", "Todo", "tests", "migrate", "logs"]
 testDriver = "tests"
 
 [leanOptions]
@@ -65,7 +65,7 @@ rev = "v0.16.0"
 [[require]]
 name = "authentication"
 git = "https://github.com/paulbutcher/lean-authentication"
-rev = "v0.16.3"
+rev = "v0.16.5"
 
 [[require]]
 name = "leanmigratePostgres"
@@ -91,6 +91,11 @@ git = "https://github.com/paulbutcher/lean-middleware"
 rev = "v0.16.0"
 subDir = "assets"
 
+[[require]]
+name = "json"
+git = "https://github.com/paulbutcher/lean-json"
+rev = "v0.3.0"
+
 [[lean_lib]]
 name = "Todo"
 
@@ -111,11 +116,6 @@ root = "TodoTests"
 name = "migrate"
 srcDir = "dev"
 root = "Migrate"
-
-[[lean_exe]]
-name = "seal"
-srcDir = "dev"
-root = "Seal"
 
 [[lean_exe]]
 name = "logs"

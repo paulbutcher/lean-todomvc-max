@@ -79,13 +79,13 @@ To enable federated sign-in, register an OAuth client with each provider you wan
 
 Registering with each: [Google](https://developers.google.com/identity/openid-connect/openid-connect), [Apple](https://developer.apple.com/documentation/signinwithapple/configuring-your-environment-for-sign-in-with-apple), [GitHub](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app).
 
-A provider's secret is never configured in the clear. `lake exe seal` mints the key that seals them and seals one at a time, reading it from standard input so that it reaches neither the process list nor a shell history:
+A provider's secret is never configured in the clear. `auth-seal`, which [lean-authentication](https://github.com/paulbutcher/lean-authentication) ships, mints the key that seals them and seals one at a time, reading it from standard input so that it reaches neither the process list nor a shell history. The tenant is `todomvc` and the key id is whatever `AUTH_SEALING_KEY_ID` will be set to:
 
 ```
-lake exe seal key                              # once, then keep it
-export AUTH_SEALING_KEY=<that> AUTH_SEALING_KEY_ID=1
-printf %s "<the secret>" | lake exe seal google client-secret
-lake exe seal apple signing-key < AuthKey_XXXX.p8
+lake exe auth-seal key                         # once, then keep it
+export AUTH_SEALING_KEY=<that>
+printf %s "<the secret>" | lake exe auth-seal seal todomvc google client-secret 1
+lake exe auth-seal seal todomvc apple signing-key 1 < AuthKey_XXXX.p8
 ```
 
 What it prints is what the corresponding variable is set to: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and for Apple `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_SIGNING_KEY`. A client id that is set with anything else about it missing or unreadable stops the application from starting, rather than quietly dropping that provider from the sign-in page.
@@ -115,14 +115,7 @@ Answer yes to "Allow SAM CLI IAM role creation" and "Function Function Url has n
 
 A sign-in link has to name an origin, and the function URL is not knowable until the function exists, so deploy a second time with `BaseUrl` set to what the first deploy printed (either run `sam deploy --guided` a second time or edit the created `samconfig.toml`).
 
-The stack generates the sealing key rather than taking one, so federated providers are configured on that second deploy too: read the key back, seal each secret against it, and set the parameters. The redirect URIs you register need the same base URL, so both wait on the same thing, and the first deploy prints both in its outputs: `FederatedCallback` is what to register, with `google`, `apple` or `github` in place of `<provider>`, and `SealingKeySecret` is where the key is.
-
-```
-aws secretsmanager get-secret-value \
-  --secret-id "$(aws cloudformation describe-stacks --stack-name todomvc \
-    --query "Stacks[0].Outputs[?OutputKey=='SealingKeySecret'].OutputValue" --output text)" \
-  --query SecretString --output text
-```
+Federated providers are configured on that second deploy too, because the redirect URIs you register need the same base URL. The first deploy prints what to register as `FederatedCallback`, with `google`, `apple` or `github` in place of `<provider>`. Mint the sealing key as above, seal each secret against it, and set `SealingKey` along with the sealed values. The stack takes the key rather than generating one: it is 32 bytes in base64url rather than a string of random characters, which is not something `GenerateSecretString` can produce.
 
 For the assistant, set `BedrockModel` to an id enabled in your region. Most current models are reachable only through a cross-region inference profile, which `aws bedrock list-inference-profiles` lists. A Marketplace-served model enables itself on first invocation, and that invocation must come from a principal holding `aws-marketplace:Subscribe`, so prime it once from an administrative identity:
 

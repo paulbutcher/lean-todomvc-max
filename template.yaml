@@ -76,13 +76,25 @@ Parameters:
       under a key this deployment no longer holds cannot be opened, and the provider it belongs
       to stops working.
 
+  # Supplied rather than generated, because it is not a string of random characters: it is 32
+  # bytes written in base64url, and the last character of those 43 carries only two bits. A
+  # generator drawing characters from an alphabet has no way to respect that, and three in four
+  # of the keys it drew would not decode.
+  SealingKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: >-
+      The key every sealed provider secret is opened under, as `lake exe auth-seal key` mints it.
+      Empty where no provider is configured, since nothing then needs opening.
+
   # The three federated providers. Each is offered only where its client id is set, so a
   # deployment that wants none leaves all of these alone and gets the emailed link by itself.
   #
   # The secrets are parameters rather than Secrets Manager entries because they are already
-  # ciphertext: `lake exe seal` binds each to this tenant, this provider and this field before it
-  # ever reaches here, and what opens them is `SealingKey`, which is a secret and is generated
-  # below. A sealed value in a parameter file discloses nothing without it.
+  # ciphertext: `lake exe auth-seal` binds each to this tenant, this provider and this field
+  # before it ever reaches here, and what opens them is `SealingKey` above. A sealed value in a
+  # parameter file discloses nothing without it.
   GoogleClientId:
     Type: String
     Default: ""
@@ -91,7 +103,9 @@ Parameters:
   GoogleClientSecret:
     Type: String
     Default: ""
-    Description: Google's client secret, as `lake exe seal google client-secret` renders it.
+    Description: >-
+      Google's client secret, as `lake exe auth-seal seal todomvc google client-secret <key-id>`
+      renders it.
 
   AppleClientId:
     Type: String
@@ -115,8 +129,9 @@ Parameters:
     Type: String
     Default: ""
     Description: >-
-      Apple's `.p8`, as `lake exe seal apple signing-key < key.p8` renders it. A key rather than
-      a secret because Apple's client secret is minted per request and never stored.
+      Apple's `.p8`, as `lake exe auth-seal seal todomvc apple signing-key <key-id> < key.p8`
+      renders it. A key rather than a secret because Apple's client secret is minted per request
+      and never stored.
 
   GitHubClientId:
     Type: String
@@ -126,7 +141,9 @@ Parameters:
   GitHubClientSecret:
     Type: String
     Default: ""
-    Description: GitHub's client secret, as `lake exe seal github client-secret` renders it.
+    Description: >-
+      GitHub's client secret, as `lake exe auth-seal seal todomvc github client-secret <key-id>`
+      renders it.
 
 Resources:
   # Both the function and the database sit in this VPC so the database needs no public address.
@@ -413,19 +430,6 @@ Resources:
         ExcludePunctuation: true
         ExcludeCharacters: "ghijklmnopqrstuvwxyz"
 
-  # Opens every sealed provider secret, and so must not live where those secrets do. It is
-  # generated here rather than supplied, which makes the first deploy the one that mints it:
-  # read it back, seal each provider's secret against it, and deploy again with the results.
-  SealingKey:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Description: !Sub "Provider secret sealing key for ${AWS::StackName}"
-      GenerateSecretString:
-        PasswordLength: 64
-        ExcludeUppercase: true
-        ExcludePunctuation: true
-        ExcludeCharacters: "ghijklmnopqrstuvwxyz"
-
   # Declared rather than left to Lambda to create on first use, so that retention is this
   # template's decision and so that the saved queries and the dashboard have something to be
   # written against. The name is the one Lambda would have chosen anyway, which is what keeps
@@ -494,7 +498,7 @@ Resources:
           SESSION_KEY: !Sub "{{resolve:secretsmanager:${SessionKey}:SecretString}}"
           AUTH_PEPPER: !Sub "{{resolve:secretsmanager:${AuthPepper}:SecretString}}"
           AUTH_PEPPER_KEY_ID: !Ref PepperKeyId
-          AUTH_SEALING_KEY: !Sub "{{resolve:secretsmanager:${SealingKey}:SecretString}}"
+          AUTH_SEALING_KEY: !Ref SealingKey
           AUTH_SEALING_KEY_ID: !Ref SealingKeyId
           GOOGLE_CLIENT_ID: !Ref GoogleClientId
           GOOGLE_CLIENT_SECRET: !Ref GoogleClientSecret
@@ -686,13 +690,6 @@ Outputs:
   Dashboard:
     Description: Where the telemetry is read.
     Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${TelemetryDashboard}"
-
-  SealingKeySecret:
-    Description: >-
-      Where the key that opens provider secrets lives. Read it with
-      `aws secretsmanager get-secret-value --secret-id <this> --query SecretString --output text`,
-      then seal each provider's secret against it with `lake exe seal`.
-    Value: !Ref SealingKey
 
   FederatedCallback:
     Description: >-

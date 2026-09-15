@@ -9,7 +9,7 @@ public import Authentication
 public import Authentication.Instances
 public import AuthenticationFetch
 public import AuthenticationOidc
-public import Leancrypto.Codec.Hex
+public import Leancrypto.Codec.Base64Url
 
 public section
 
@@ -62,7 +62,7 @@ sign-in page with a button missing, and tells nobody. -/
 private def storedSecret (get : Lookup) (name : String) : IO StoredSecret := do
   let raw ← required get name
   let some secret := StoredSecret.parse raw
-    | throw (IO.userError s!"{name} is not a secret this can read; seal it with `lake exe seal`")
+    | throw (IO.userError s!"{name} is not a secret this can read; seal it with `lake exe auth-seal`")
   pure secret
 
 /-- The three this application offers.
@@ -108,8 +108,8 @@ private def read (get : Lookup) (reader : Reader) : IO (Option ProviderConfig) :
 beside the database it protects. -/
 private def sealingRing (get : Lookup) : IO Oidc.SealingRing := do
   let encoded ← required get "AUTH_SEALING_KEY"
-  let some secret := Leancrypto.Codec.Hex.decodeString encoded
-    | throw (IO.userError "AUTH_SEALING_KEY is not an even-length run of hex digits")
+  let some secret := Leancrypto.Codec.Base64Url.decodeString encoded
+    | throw (IO.userError "AUTH_SEALING_KEY is not base64url; mint one with `lake exe auth-seal key`")
   if secret.size != 32 then
     throw (IO.userError s!"AUTH_SEALING_KEY decodes to {secret.size} bytes, and 32 are wanted")
   pure { current := { keyId := ⟨← required get "AUTH_SEALING_KEY_ID"⟩, secret } }
