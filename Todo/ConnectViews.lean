@@ -119,7 +119,7 @@ inductive Withdrawal where
   twice. Said out loud rather than silently re-rendering, since the two look identical. -/
   | alreadyGone
 
-def connectPage (endpoint : String) (token : Option String)
+def connectPage (assets : Assets) (endpoint : String) (token : Option String)
     (connections : List Authorization.Connection := [])
     (withdrew : Option Withdrawal := none) : String :=
   let confirmation : List (Node .flow) :=
@@ -133,7 +133,7 @@ def connectPage (endpoint : String) (token : Option String)
       [p [s!"Disconnected {name}. It will ask again the next time you use it."] { class_ := "note" }]
     | some .alreadyGone =>
       [p ["That one was already disconnected."] { class_ := "note" }]
-  cardPage "Use your own agent"
+  cardPage assets "Use your own agent"
     ([ h2 ["Use your own agent"] ] ++ confirmation ++
     [ p ["Your own assistant can work on this list too, the same way the one here does."],
       p ["Assistants differ in where that setting lives, and they move it, so rather than \
@@ -162,6 +162,6 @@ def connectPage (endpoint : String) (token : Option String)
         { class_ := "aside" } ]
     ++ connectionsSection token connections
     ++ [disconnectSection token, p [a { href := links.index } ["Back to your list"]]])
-    [connectScript]
+    [assets.connectScript]
 
 end Todo

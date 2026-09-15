@@ -98,8 +98,8 @@ private def providerChoices (providers : List Authentication.ProviderConfig)
 
 Separate from the magic link's `unknown`, which describes a link rather than an address: getting
 here means the URL named something that was never on offer, and there is no new one to ask for. -/
-def notFoundPage : String :=
-  cardPage "Not found"
+def notFoundPage (assets : Assets) : String :=
+  cardPage assets "Not found"
     [ h2 ["Not found"],
       p ["There is nothing at that address."],
       p [a { href := signInPath } ["Sign in"]] ]
@@ -110,8 +110,8 @@ The library answers them all alike on purpose: which refusal it was describes th
 than this application, so distinguishing them here would answer a question nobody signed in is
 entitled to ask. What is left to say is what to do instead, and both ways out are offered because
 which one applies depends on whether they have an account already. -/
-def federationRefusedPage : String :=
-  cardPage "That sign-in could not be completed"
+def federationRefusedPage (assets : Assets) : String :=
+  cardPage assets "That sign-in could not be completed"
     [ h2 ["That sign-in could not be completed"],
       p ["Signing in with that provider did not work. It may have been cancelled, or it may have
           told us nothing we could sign you in with."] { class_ := "warn" },
@@ -122,10 +122,10 @@ def federationRefusedPage : String :=
 /-- The providers are a parameter rather than something read from `context`, because
 `PageContext` carries no provider information: which ones a tenant offers is the tenant config's,
 and the library leaves rendering them entirely here. -/
-def pages (providers : List Authentication.ProviderConfig := []) :
+def pages (assets : Assets) (providers : List Authentication.ProviderConfig := []) :
     Authentication.Http.Pages where
   signIn context :=
-    cardPage s!"Sign in to {context.tenantName}"
+    cardPage assets s!"Sign in to {context.tenantName}"
       ([ h2 ["Sign in"],
         p ["Enter your address and we will mail you a link. There is no password to remember."],
         form
@@ -151,7 +151,7 @@ def pages (providers : List Authentication.ProviderConfig := []) :
   sent context message :=
     match message with
     | .checkYourMail =>
-      cardPage "Check your mail"
+      cardPage assets "Check your mail"
         ([ h2 ["Check your mail"],
            p [messageText message],
            p ["Open the link on this device and you are signed in. There is nothing to type."],
@@ -159,12 +159,12 @@ def pages (providers : List Authentication.ProviderConfig := []) :
                limit on how often you can ask."] { class_ := "note" } ]
           ++ codeAside context)
     | refusal =>
-      cardPage "No link sent"
+      cardPage assets "No link sent"
         [ h2 ["No link sent"],
           p [messageText refusal] { class_ := "warn" },
           p [a { href := signInPath } ["Try again"]] ]
   confirm context :=
-    cardPage s!"Sign in to {context.tenantName}"
+    cardPage assets s!"Sign in to {context.tenantName}"
       [ h2 ["One more tap"],
         p ["You opened this link in the browser you asked from, so this is the last step."],
         form
@@ -172,7 +172,7 @@ def pages (providers : List Authentication.ProviderConfig := []) :
             ++ [(button ["Sign in"] : Node .flow)])
           { method := "post", action := context.action } ]
   code context shown :=
-    cardPage "Your verification code"
+    cardPage assets "Your verification code"
       [ h2 ["Your verification code"],
         p ["Type this into the browser you asked to sign in from. It will not sign you in on \
             this device."],
@@ -187,13 +187,13 @@ def pages (providers : List Authentication.ProviderConfig := []) :
   -- read and rejected, which for an expired link it was not.
   codeRejected context remaining :=
     if remaining == 0 then
-      cardPage "Ask for a new link"
+      cardPage assets "Ask for a new link"
         [ h2 ["This link is finished"],
           p ["Either its attempts ran out or it expired. A new one takes a moment."]
             { class_ := "warn" },
           p [a { href := signInPath } ["Ask for a new link"]] ]
     else
-      cardPage "That code was not right"
+      cardPage assets "That code was not right"
         ([ h2 ["That code was not right"],
            p [if remaining == 1 then
                 "One more attempt before this link stops working."
@@ -202,10 +202,10 @@ def pages (providers : List Authentication.ProviderConfig := []) :
              { class_ := "warn" } ]
           ++ codeAside context (expanded := true))
   refused context reason :=
-    cardPage s!"Sign in to {context.tenantName}"
+    cardPage assets s!"Sign in to {context.tenantName}"
       [ h2 ["Not signed in"], p [refusalText reason] ]
   unknown :=
-    cardPage "Not found"
+    cardPage assets "Not found"
       [ h2 ["Not found"],
         p ["That link has been used, has expired, or was never ours. Asking for a new one is \
             the way out of all three."] ]
@@ -227,8 +227,8 @@ Nothing is sent to the client, because nothing about it has been established, so
 told instead. The description comes from the authorisation server and describes the request
 rather than the person, so it is safe to show and is the only thing here that says what went
 wrong. -/
-def refusedClientPage (description : String) : String :=
-  cardPage "That request was refused"
+def refusedClientPage (assets : Assets) (description : String) : String :=
+  cardPage assets "That request was refused"
     [ h2 ["That request was refused"],
       p ["Something asked to use your todo list, and this server could not establish what it \
           was. Nothing has been sent to it."] { class_ := "warn" },
@@ -247,7 +247,7 @@ establish who is listening on a port of this person's own machine.
 The scopes are checkboxes rather than one yes: granting an agent the run of the list when it
 only ever needed to read it is the mistake worth making easy to avoid. `conclude` narrows
 whatever comes back to what was asked for, so nothing here can widen a grant. -/
-def consentPage (context : Authentication.OAuth.Http.ConsentContext) : String :=
+def consentPage (assets : Assets) (context : Authentication.OAuth.Http.ConsentContext) : String :=
   let name := claimedName context.clientName
   let vouching : List (Node .flow) :=
     match context.clientHost with
@@ -258,7 +258,7 @@ def consentPage (context : Authentication.OAuth.Http.ConsentContext) : String :=
       [p ["It is running on this device. Nothing can establish what it is, beyond that you \
            started it."] { class_ := "warn" }]
     else []
-  cardPage s!"Allow {name}?"
+  cardPage assets s!"Allow {name}?"
     ([ h2 [s!"Allow {name}?"],
        p [s!"{name} is asking to use your todo list."] ]
       ++ vouching
@@ -282,8 +282,8 @@ def consentPage (context : Authentication.OAuth.Http.ConsentContext) : String :=
                       : Node .flow) ])
              { method := "post", action := context.action } ])
 
-def oauthPages : Authentication.OAuth.Http.OAuthPages where
-  consent := consentPage
-  refusedClient := refusedClientPage
+def oauthPages (assets : Assets) : Authentication.OAuth.Http.OAuthPages where
+  consent := consentPage assets
+  refusedClient := refusedClientPage assets
 
 end Todo

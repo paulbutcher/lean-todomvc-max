@@ -60,7 +60,7 @@ rev = "v0.7.2"
 [[require]]
 name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.14.0"
+rev = "v0.16.0"
 
 [[require]]
 name = "authentication"
@@ -76,14 +76,20 @@ subDir = "postgres"
 [[require]]
 name = "middleware-cookiestore"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.14.0"
+rev = "v0.16.0"
 subDir = "cookiestore"
 
 [[require]]
 name = "middleware-tracing"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.14.0"
+rev = "v0.16.0"
 subDir = "tracing"
+
+[[require]]
+name = "middleware-assets"
+git = "https://github.com/paulbutcher/lean-middleware"
+rev = "v0.16.0"
+subDir = "assets"
 
 [[lean_lib]]
 name = "Todo"

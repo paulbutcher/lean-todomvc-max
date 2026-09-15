@@ -11,6 +11,7 @@ public import Leancrypto.Sha2
 public import Leancrypto.Codec.Hex
 public import Todo.Store
 public import Todo.Links
+public import Todo.Assets
 public import Todo.ChatViews
 
 @[expose] public section
@@ -28,28 +29,6 @@ def htmxScript : ScriptAttrs :=
 def todomvcCss : LinkAttrs :=
   { rel := "stylesheet", href := "https://unpkg.com/todomvc-app-css@2.4.3/index.css" }
 
-def favicon : LinkAttrs :=
-  { rel := "icon", href := "/favicon.svg" }
-
-/-- The panel and the split it sits in. Separate from `todomvcCss`, which is the unmodified
-TodoMVC stylesheet and is left that way: the list still has to look like the one the spec
-describes, and everything here is around it rather than in it. -/
-def chatCss : LinkAttrs :=
-  { rel := "stylesheet", href := "/chat.css" }
-
-def chatScript : ScriptAttrs :=
-  { src := "/chat.js" }
-
-/-- What the sign-in pages and the connect page need beyond todomvc-app-css, which styles a list
-and not prose. -/
-def authCss : LinkAttrs :=
-  { rel := "stylesheet", href := "/auth.css" }
-
-/-- The copy button on the connect page, which is the one thing on any of these pages a browser
-cannot do without being told how. -/
-def connectScript : ScriptAttrs :=
-  { src := "/connect.js" }
-
 /-- A page that is read rather than worked in, in the shell the todo list uses so that leaving
 the list does not look like leaving the site. The heading floats above the card on
 `todomvc-app-css`'s own positioning; it is here for that rather than to say anything.
@@ -57,13 +36,13 @@ the list does not look like leaving the site. The heading floats above the card 
 `scripts` is a parameter so that the pages which need none carry none: sign-in and the consent
 page are where a person's credentials and their answer are given, and the less that runs there
 the better. -/
-def cardPage (heading : String) (children : List (Node .flow))
+def cardPage (assets : Assets) (heading : String) (children : List (Node .flow))
     (scripts : List ScriptAttrs := []) : String :=
   document
     [ head
         ([ meta_ [("charset", "utf-8")],
            meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
-           title heading, link todomvcCss, link authCss, link favicon ]
+           title heading, link todomvcCss, link assets.authCss, link assets.favicon ]
           ++ scripts.map (script · [])),
       body
         [ section_
@@ -234,13 +213,13 @@ def appShell (address : Option String) (messages : Array LLMClient.Msg) (turn : 
       chatPanel messages turn ]
     { class_ := "app-shell" }
 
-def pageView (csrfToken : Option String) (address : Option String)
+def pageView (assets : Assets) (csrfToken : Option String) (address : Option String)
     (messages : Array LLMClient.Msg) (turn : Option TurnState) (items allItems : Array Item)
     (filter : Filter) : String :=
   document
     [ head
-        [ meta_ [("charset", "utf-8")], title "todos", script htmxScript, script chatScript,
-          link todomvcCss, link chatCss, link favicon ],
+        [ meta_ [("charset", "utf-8")], title "todos", script htmxScript,
+          script assets.chatScript, link todomvcCss, link assets.chatCss, link assets.favicon ],
       body
         [ appShell address messages turn
             [ section_

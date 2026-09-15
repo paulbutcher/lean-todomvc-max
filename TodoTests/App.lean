@@ -23,7 +23,7 @@ private def completed : Item := { id := 2, title := "beta", completed := true }
 
 private def signedInAs (account : Account) (initial : Array Item) : IO TestHandler := do
   let store ← memoryStore account initial
-  pure (Todo.app (fixedIdentity account (← IO.mkRef 0)) store
+  pure (Todo.app testAssets (fixedIdentity account (← IO.mkRef 0)) store
     (← scriptedAssistant #[]) noGrants).onRequest
 
 private def handlerOf (initial : Array Item) : IO TestHandler := signedInAs alice initial
@@ -75,7 +75,7 @@ than shown somebody's list or told the item it named does not exist. -/
 private def testAnonymousRequestsAreSentToSignIn : IO Unit := do
   let store ← memoryStore alice #[active]
   let handler :=
-    (Todo.app anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
+    (Todo.app testAssets anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
   check "GET / with no session" (mkGetClose "/") handler fun response => do
     assertStatus response "HTTP/1.1 303"
     assertContains response "/t/todomvc/signin"
@@ -88,7 +88,7 @@ private def testAnonymousHtmxRequestsAreToldToNavigate : IO Unit := do
   let store ← memoryStore alice #[active]
   check "POST /todos/1/toggle with no session"
     (mkPost "/todos/1/toggle" "" "HX-Request: true\x0d\nConnection: close\x0d\n")
-    (Todo.app anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
+    (Todo.app testAssets anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
     fun response => do
       assertContains response "Redirect: /t/todomvc/signin"
       assertAbsent response "HTTP/1.1 303"
@@ -98,7 +98,7 @@ reading finds nothing and mutating changes nothing. -/
 private def testOneAccountCannotReachAnother : IO Unit := do
   let store ← memoryStore alice #[active]
   let asBob :=
-    (Todo.app (fixedIdentity bob (← IO.mkRef 0)) store (← scriptedAssistant #[])
+    (Todo.app testAssets (fixedIdentity bob (← IO.mkRef 0)) store (← scriptedAssistant #[])
       noGrants).onRequest
   check "GET / as another account" (mkGetClose "/") asBob fun response =>
     assertAbsent response "alpha"
@@ -115,7 +115,7 @@ private def testSignOutRevokesAndClearsTheCookie : IO Unit := do
   let store ← memoryStore alice #[]
   let revocations ← IO.mkRef 0
   check "POST /signout" (mkPost "/signout" "" "Connection: close\x0d\n")
-    (Todo.app (fixedIdentity alice revocations) store (← scriptedAssistant #[])
+    (Todo.app testAssets (fixedIdentity alice revocations) store (← scriptedAssistant #[])
       noGrants).onRequest
     fun response => do
       assertContains response "auth_session="
@@ -127,7 +127,7 @@ private def serverOf (https : Bool) : IO TestHandler := do
   let sessions ← Middleware.MemoryStore.new
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
-  pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store (← scriptedAssistant #[])
+  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) auth store (← scriptedAssistant #[])
     sessions noGrants (https := https)).onRequest
 
 /-- Only a deployment with something terminating TLS in front of it may mark the session cookie
@@ -152,7 +152,7 @@ private def testSignInRoutesAreServedOutsideAntiForgery : IO Unit := do
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "the sign-in routes answered" }
   let handler :=
-    (Todo.server anonymousIdentity auth store (← scriptedAssistant #[]) sessions
+    (Todo.server testAssets anonymousIdentity auth store (← scriptedAssistant #[]) sessions
       noGrants).onRequest
   check "POST /t/todomvc/signin with no token"
     (mkPost "/t/todomvc/signin" "email=someone@example.com" "Connection: close\x0d\n") handler
@@ -180,7 +180,7 @@ private def testTheConnectPageExplainsEveryScopeOnOffer : IO Unit := do
 served the button and not the script would look finished and be inert. -/
 private def testTheConnectPageServesWhatMakesTheCopyButtonWork : IO Unit := do
   check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
-    fun response => assertContains response connectScript.src
+    fun response => assertContains response testAssets.connectScript.src
 
 /-- Somebody whose assistant has stopped working needs a way out of it from here, and the way out
 is a request to this application rather than something to do in the assistant. -/

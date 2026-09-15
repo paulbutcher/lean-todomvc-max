@@ -165,12 +165,17 @@ def main : IO Unit := AwsLambda.serve do
   runTelemetry (spanning "migrate" (liftM (Postgres.Pool.withConnAsync pool Todo.migrate)))
   let sessions ← sessionStore
   let settings ← authSettings
-  -- Built here rather than inside `site` because the discovery document and the key set are
-  -- cached in them, and a cold start is the one place this process may pay for filling a cache.
-  let site := Todo.Auth.site pool settings (← (settings.federation.mapM Todo.Federation.ports : IO _))
+  -- Hashing every file under `public` once per cold start, which is what lets each be served
+  -- under a name that changes with its content.
+  let assets ← Todo.Assets.load "public"
+  -- The federated ports are built here rather than inside `site` because the discovery document
+  -- and the key set are cached in them, and a cold start is the one place this process may pay
+  -- for filling a cache.
+  let site := Todo.Auth.site pool settings assets
+    (← (settings.federation.mapM Todo.Federation.ports : IO _))
   let assistant ← assistant pool
   -- A function URL is reachable over https only, so TLS termination is a given here.
   pure (AwsLambda.Http.handler
-    (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions
+    (Todo.server assets site.identity site.handler (Todo.Db.store pool) assistant sessions
       site.authorization (Authentication.OAuth.Http.routes site.oauth) site.config.providers
       (https := true)))

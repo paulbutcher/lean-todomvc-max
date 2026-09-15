@@ -74,16 +74,18 @@ def main : IO Unit := Async.block do
     -- Federated sign-in is configured or it is not, here as in the deployment: a developer with
     -- no provider registered gets the magic link and no buttons.
     let federation ← Todo.Federation.fromEnv
+    let assets ← Todo.Assets.load "public"
     let site := Todo.Auth.site pool
       { pepper := developmentPepper
         baseUrl := ⟨s!"http://localhost:{port}"⟩
         senderAddress := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩
         transport := Authentication.EmailTransport.console
         federation }
+      assets
       (← (federation.mapM Todo.Federation.ports : IO _))
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
     let server ← serve addr
-      (Todo.server site.identity site.handler (Todo.Db.store pool) assistant sessions
+      (Todo.server assets site.identity site.handler (Todo.Db.store pool) assistant sessions
         site.authorization (Authentication.OAuth.Http.routes site.oauth) site.config.providers)
     IO.println s!"Listening on http://localhost:{port}"
     IO.println s!"MCP endpoint at http://localhost:{port}/mcp"

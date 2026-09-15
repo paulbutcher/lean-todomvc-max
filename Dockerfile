@@ -56,8 +56,9 @@ COPY --from=build /src/.lake/packages/lean-libcrypto/.lake/build/lib/libcrypto_s
 COPY public /var/task/public
 COPY migrations /var/task/migrations
 
-# The `file` middleware resolves "public" against the working directory, as does the migration
-# runner "migrations".
+# "public" is resolved against the working directory, by the asset hashing at startup and by the
+# `file` middleware after it, as is "migrations" by the migration runner. Without it the function
+# does not start: the pages name files that would not be there.
 WORKDIR /var/task
 
 # The base image's entrypoint execs /var/task/bootstrap when it exists, and wraps it in the

@@ -126,18 +126,20 @@ structure Site where
   /-- What a federated sign-in is made of, and `none` where none is offered. Held here rather
   than rebuilt per request because the discovery document and the key set are cached inside it. -/
   oidc : Option (Oidc.SignInPorts IO)
+  assets : Todo.Assets
   settings : Settings
 
 /-- The federated ports are handed in rather than built here, because they hold caches and this
 is not `IO`: what a process must do once, the call site can then be seen doing once.
 `Todo.Federation.ports` is what builds them. -/
-def site (pool : _root_.Postgres.Pool) (settings : Settings)
+def site (pool : _root_.Postgres.Pool) (settings : Settings) (assets : Todo.Assets)
     (oidc : Option (Oidc.SignInPorts IO) := none) : Site :=
   let oauthPorts := Todo.Authorization.ports pool { current := settings.pepper }
   { ports := ports pool settings
     oauthPorts
     authorization := Todo.Authorization.site oauthPorts settings.baseUrl
     oidc
+    assets
     settings }
 
 /-- Where a refused federated sign-in is written down, since every one of them renders the same
@@ -166,7 +168,7 @@ def config (s : Site) : TenantConfig Todo.tenant := tenantConfig s.settings Todo
 is the library's requirement and costs nothing here: there is only ever one. -/
 def http (s : Site) : Authentication.Http.Config where
   ports := s.ports
-  pages := Todo.pages (config s).providers
+  pages := Todo.pages s.assets (config s).providers
   tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
 
 /-- The authorisation server's own endpoints, at the origin rather than below the tenant's path:
@@ -179,7 +181,7 @@ and the alternative is refusing them all; the page still asks, and a box left un
 withheld. -/
 def oauth (s : Site) : Authentication.OAuth.Http.Config where
   ports := s.oauthPorts
-  pages := Todo.oauthPages
+  pages := Todo.oauthPages s.assets
   mountedAt := .origin Todo.tenant
   defaultScopes := some Todo.Authorization.scopes
   tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
@@ -198,9 +200,9 @@ def federatedRoutes (s : Site) : List (Routing.Route Routing.Result) :=
       { ports := s.ports
         oidc
         tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
-        refusedPage := Todo.federationRefusedPage
+        refusedPage := Todo.federationRefusedPage s.assets
         observeRefusal
-        notFoundPage := Todo.notFoundPage }
+        notFoundPage := Todo.notFoundPage s.assets }
 
 end Site
 
@@ -283,6 +285,6 @@ a link that has been used or has expired and would describe the wrong thing for 
 no route at all. -/
 def Site.handler (s : Site) : StatelessHandler :=
   Routing.toHandler (Authentication.Http.routes s.http ++ s.federatedRoutes)
-    (fun _ => Response.notFound.html Todo.notFoundPage)
+    (fun _ => Response.notFound.html (Todo.notFoundPage s.assets))
 
 end Todo.Auth

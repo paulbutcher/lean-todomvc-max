@@ -106,7 +106,7 @@ def listRefresh (store : Store) (account : Account) (req : Request Body.Stream) 
 
 /-! ## Handlers -/
 
-def pageHandler (filter : Filter) (store : Store) (assistant : Assistant) (identity : Identity)
+def pageHandler (assets : Assets) (filter : Filter) (store : Store) (assistant : Assistant) (identity : Identity)
     (account : Account) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let address ← (identity.address account : IO _)
   let parent := parentSpan req
@@ -115,7 +115,7 @@ def pageHandler (filter : Filter) (store : Store) (assistant : Assistant) (ident
   -- the panel comes back polling, exactly as the request that started the turn left it.
   let turn ← (assistant.turns.get account : IO _)
   render store account parent filter
-    (pageView ((req.extensions.get AntiForgeryToken).map (·.value)) address messages turn)
+    (pageView assets ((req.extensions.get AntiForgeryToken).map (·.value)) address messages turn)
 
 /-- Swaps one todo's `<li>` into edit mode. Not a mutation (nothing in the store changes), so
 unlike every other route below it targets and returns just that one item, not the whole list
@@ -195,37 +195,37 @@ def listStatusHandler (store : Store) (account : Account) (params : Params)
 /-- The address of the MCP endpoint, and what to hand an assistant of your own so that it can
 set itself up against it. Behind the session like the rest of the application, though nothing on
 it is private: what it describes is this account's list, and somebody reading it has one. -/
-private def connectView (authorization : Authorization.Site) (account : Account)
+private def connectView (assets : Assets) (authorization : Authorization.Site) (account : Account)
     (req : Request Body.Stream) (withdrew : Option Withdrawal := none) :
     ContextAsync (Response Body.Any) := do
   -- Read after any withdrawal rather than before, so the page shows what is connected now and
   -- not what was connected when the button was pressed.
   let connections ← (authorization.connections account : IO _)
-  connectPage authorization.endpoint ((req.extensions.get AntiForgeryToken).map (·.value))
+  connectPage assets authorization.endpoint ((req.extensions.get AntiForgeryToken).map (·.value))
     connections withdrew |> Response.ok.html
 
-def connectHandler (authorization : Authorization.Site) (account : Account)
+def connectHandler (assets : Assets) (authorization : Authorization.Site) (account : Account)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
-  connectView authorization account req
+  connectView assets authorization account req
 
 /-- Withdraws every approval this account has given, and says so on the page it was asked from.
 
 The page rather than a redirect because there is nothing to carry a message through one, and
 answering the `POST` costs only a resubmission on refresh, which withdraws what is already
 withdrawn. -/
-def disconnectHandler (authorization : Authorization.Site) (account : Account)
+def disconnectHandler (assets : Assets) (authorization : Authorization.Site) (account : Account)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let revoked ← (authorization.disconnect account : IO Nat)
   (Telemetry.info "every agent disconnected" [("oauth.connections_revoked", .int revoked)]
     : TelemetryT Async Unit).run (parentSpan req)
-  connectView authorization account req (some (.all revoked))
+  connectView assets authorization account req (some (.all revoked))
 
 /-- Withdraws the one approval the row named.
 
 Both fields are required and neither has a default. A missing `client` cannot be read as "all of
 them": that is the same request as the button beside this one, and a form that lost a hidden
 field would then withdraw everything somebody still wanted. -/
-def disconnectOneHandler (authorization : Authorization.Site) (account : Account)
+def disconnectOneHandler (assets : Assets) (authorization : Authorization.Site) (account : Account)
     (params : Params) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let named := do
     let client ← params.get "client"
@@ -249,25 +249,25 @@ def disconnectOneHandler (authorization : Authorization.Site) (account : Account
       [("oauth.client", .str client), ("oauth.resource", .str resource),
        ("oauth.was_connected", .str (if withdrawn then "yes" else "no"))]
       : TelemetryT Async Unit).run (parentSpan req)
-    connectView authorization account req
+    connectView assets authorization account req
       (some (if withdrawn then .one name else .alreadyGone))
 
 /-- What can get into this account, and the controls that change it.
 
 Read after any change rather than before, for the reason the connect page is: the page has to show
 what is linked now and not what was linked when the button was pressed. -/
-private def accountView (identity : Identity)
+private def accountView (assets : Assets) (identity : Identity)
     (providers : List Authentication.ProviderConfig) (account : Account)
     (req : Request Body.Stream) (notice : Option AccountNotice := none) :
     ContextAsync (Response Body.Any) := do
   let address ← (identity.address account : IO _)
   let linked ← (identity.linked account : IO _)
-  accountPage address providers linked ((req.extensions.get AntiForgeryToken).map (·.value)) notice
+  accountPage assets address providers linked ((req.extensions.get AntiForgeryToken).map (·.value)) notice
     |> Response.ok.html
 
-def accountHandler (identity : Identity) (providers : List Authentication.ProviderConfig)
+def accountHandler (assets : Assets) (identity : Identity) (providers : List Authentication.ProviderConfig)
     (account : Account) (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
-  accountView identity providers account req
+  accountView assets identity providers account req
 
 /-- Takes one provider away from this account.
 
@@ -277,7 +277,7 @@ learn which ones are real.
 
 The name is read before the removal, because afterwards there is no credential left to read it
 from and the page has to say which one went. -/
-def accountUnlinkHandler (identity : Identity)
+def accountUnlinkHandler (assets : Assets) (identity : Identity)
     (providers : List Authentication.ProviderConfig) (account : Account) (params : Params)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   match params.get "credential" with
@@ -304,7 +304,7 @@ def accountUnlinkHandler (identity : Identity)
          | .error .lastWayIn => "refused, last way in"
          | .error .notThisAccount => "not this account"))]
       : TelemetryT Async Unit).run (parentSpan req)
-    accountView identity providers account req (some notice)
+    accountView assets identity providers account req (some notice)
 
 /-- Ends this browser's session and clears the cookie carrying it. Clearing without revoking
 would leave a credential that still works in the hands of whoever recovers the cookie, and
@@ -498,7 +498,7 @@ private def guarded (identity : Identity)
   | some account => handler account req
   | none => toSignIn req
 
-def app (identity : Identity) (store : Store) (assistant : Assistant)
+def app (assets : Assets) (identity : Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site)
     (oauth : List (Routing.Route Routing.Result) := [])
     (providers : List Authentication.ProviderConfig := []) : StatelessHandler :=
@@ -506,9 +506,9 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
       ContextAsync (Response Body.Any)) := fun id =>
     guarded identity (handler store · id ·)
   toHandler ([
-    .get patterns.index (guarded identity (pageHandler .all store assistant identity)),
-    .get patterns.active (guarded identity (pageHandler .active store assistant identity)),
-    .get patterns.completed (guarded identity (pageHandler .completed store assistant identity)),
+    .get patterns.index (guarded identity (pageHandler assets .all store assistant identity)),
+    .get patterns.active (guarded identity (pageHandler assets .active store assistant identity)),
+    .get patterns.completed (guarded identity (pageHandler assets .completed store assistant identity)),
     .post patterns.todos (guarded identity fun account => withParams (addHandler store account)),
     .get patterns.todosStatus
       (guarded identity fun account => withParams (listStatusHandler store account)),
@@ -520,13 +520,13 @@ def app (identity : Identity) (store : Store) (assistant : Assistant)
     .post patterns.toggleAll (guarded identity (toggleAllHandler store)),
     .delete patterns.clearCompleted (guarded identity (clearCompletedHandler store)),
     .post patterns.signOut (guarded identity (signOutHandler identity)),
-    .get patterns.account (guarded identity (accountHandler identity providers)),
+    .get patterns.account (guarded identity (accountHandler assets identity providers)),
     .post patterns.accountUnlink
-      (guarded identity fun account => withParams (accountUnlinkHandler identity providers account)),
-    .get patterns.connect (guarded identity (connectHandler authorization)),
-    .post patterns.disconnect (guarded identity (disconnectHandler authorization)),
+      (guarded identity fun account => withParams (accountUnlinkHandler assets identity providers account)),
+    .get patterns.connect (guarded identity (connectHandler assets authorization)),
+    .post patterns.disconnect (guarded identity (disconnectHandler assets authorization)),
     .post patterns.disconnectOne
-      (guarded identity fun account => withParams (disconnectOneHandler authorization account)),
+      (guarded identity fun account => withParams (disconnectOneHandler assets authorization account)),
     .post patterns.chat
       (guarded identity fun account => withParams (chatHandler store assistant account)),
     .get patterns.chatStatus
@@ -580,12 +580,19 @@ session cookie `secure` and sends `hsts`. Claiming it falsely is the damaging di
 `sslRedirect` is absent whichever way `https` goes, because neither deployment has a plaintext
 listener to redirect a caller away from.
 
+`assets` serves everything under `public` at a path carrying the digest of its content, and is
+the only reason a far-future policy on those paths is safe. `cacheControl` covers everything
+else: a response carrying validators and no freshness directive falls to heuristic freshness, so
+the browser stops asking and `notModified` is never reached, which is how a redeployed
+stylesheet went on being ignored. `file` stays inside for the unfingerprinted paths, which older
+pages still name.
+
 `oauth` is the authorisation server's own endpoints, already split by the library into the half a
 person answers and the half a client does. The halves land on opposite sides of `antiForgery`,
 which is the whole reason they arrive as two lists: one wrapper over both would leave either a
 consent form that cannot be posted or a token endpoint that refuses every client. -/
-def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (store : Store)
-    (assistant : Assistant) (sessions : σ) (authorization : Authorization.Site)
+def server [SessionStore σ] (assets : Assets) (identity : Identity) (auth : StatelessHandler)
+    (store : Store) (assistant : Assistant) (sessions : σ) (authorization : Authorization.Site)
     (oauth : Authentication.OAuth.Http.Routes := { browser := [], client := [] })
     (providers : List Authentication.ProviderConfig := [])
     (https : Bool := false) : StatelessHandler :=
@@ -613,10 +620,12 @@ def server [SessionStore σ] (identity : Identity) (auth : StatelessHandler) (st
           params,
           contentType,
           defaultCharset,
+          cacheControl .noCache,
           notModified,
+          Middleware.assets assets.served,
           file "public"])
     (split auth client
       (Middleware.apply [antiForgery]
-        (app identity store assistant authorization oauth.browser providers)))
+        (app assets identity store assistant authorization oauth.browser providers)))
 
 end Todo

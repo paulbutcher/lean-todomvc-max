@@ -29,7 +29,7 @@ private def serverOf (store : Store) : IO TestHandler := do
   let sessions ← Middleware.MemoryStore.new
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
-  pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store
+  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) auth store
     (← scriptedAssistant #[]) sessions noGrants).onRequest
 
 private def spansFor (handler : TestHandler) (raw : String)

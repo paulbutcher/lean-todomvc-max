@@ -25,6 +25,17 @@ def checkEq [BEq α] [Repr α] (label : String) (expected actual : α) : IO Unit
 def alice : Account := ⟨"alice"⟩
 def bob : Account := ⟨"bob"⟩
 
+/-- Asset paths for the tests that render a page: the plain ones, which `file` still serves, not
+the digests `Assets.load` derives. What a page does with the path it is handed is what these are
+about, and a real digest would change whenever a file under `public` did. -/
+def testAssets : Todo.Assets :=
+  { served := { entries := #[] }
+    favicon := { rel := "icon", href := "/favicon.svg" }
+    authCss := { rel := "stylesheet", href := "/auth.css" }
+    chatCss := { rel := "stylesheet", href := "/chat.css" }
+    chatScript := { src := "/chat.js" }
+    connectScript := { src := "/connect.js" } }
+
 /-- Whether a rendered page says something, for the tests that read one directly rather than
 through a response. -/
 def mentions (haystack needle : String) : Bool := (haystack.splitOn needle).length > 1
@@ -188,7 +199,7 @@ def oauthRoutesOn (base : Authentication.BaseUrl := testBase) :
           oauth := Authentication.OAuth.sqlOAuthStore Authentication.Sqlite.dialect
             (Authentication.Sqlite.connection db)
           peppers := { current := settings.pepper } }
-      pages := Todo.oauthPages
+      pages := Todo.oauthPages testAssets
       mountedAt := .origin Todo.tenant
       defaultScopes := some Todo.Authorization.scopes
       tenant := fun t =>
@@ -271,7 +282,7 @@ def browserFor (store : Store) (authorization : Authorization.Site := noGrants)
   let sessions ← Middleware.MemoryStore.new
   let signIn : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.notFound.text "no sign-in here" }
-  let handler := (Todo.server (fixedIdentity account (← IO.mkRef 0)) signIn store
+  let handler := (Todo.server testAssets (fixedIdentity account (← IO.mkRef 0)) signIn store
     (← scriptedAssistant #[]) sessions authorization).onRequest
   Middleware.Test.Browser.new handler (tokenFrom := pageToken)
 

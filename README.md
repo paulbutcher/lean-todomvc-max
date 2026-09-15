@@ -26,7 +26,7 @@ Lean, `Std.Http.Server`, and:
 |---|---|
 | [lean-html](https://github.com/paulbutcher/lean-html) · [lean-htmx](https://github.com/paulbutcher/lean-htmx) | typed markup and typed `hx-*` attributes |
 | [lean-routing](https://github.com/paulbutcher/lean-routing) | typed router and route table |
-| [lean-middleware](https://github.com/paulbutcher/lean-middleware) | sessions, sealed cookie store, anti-forgery, static files, request tracing |
+| [lean-middleware](https://github.com/paulbutcher/lean-middleware) | sessions, sealed cookie store, anti-forgery, fingerprinted static files, request tracing |
 | [lean-authentication](https://github.com/paulbutcher/lean-authentication) | magic links, sessions, rate limiting, bounce handling, consent, and an OAuth 2.1 authorisation server |
 | [lean-mcp](https://github.com/paulbutcher/lean-mcp) | an MCP server over Streamable HTTP |
 | [leanpostgres](https://github.com/paulbutcher/leanpostgres) · [leanmigrate](https://github.com/paulbutcher/leanmigrate) | `libpq` bindings with a connection pool; migrations as plain SQL files |

@@ -6,6 +6,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import TodoTests.App
+public import TodoTests.Assets
 public import TodoTests.Chat
 public import TodoTests.Auth
 public import TodoTests.AuthMail
@@ -25,6 +26,7 @@ namespace TodoTests
 checked by the time this builds, so only the ones that need to execute appear here. -/
 def runAll : IO Unit := do
   runAppTests
+  runAssetsTests
   runAuthTests
   runAuthMailTests
   runChatTests

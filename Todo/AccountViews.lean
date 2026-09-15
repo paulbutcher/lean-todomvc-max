@@ -89,10 +89,10 @@ private def providerRow (linked : List (Authentication.Credential Todo.tenant))
 The address is always one of them and is not listed among the providers: every account here was
 created by a link to it and none can be without one, so showing it as something to connect or
 disconnect would offer a choice that does not exist. -/
-def accountPage (address : Option String) (providers : List Authentication.ProviderConfig)
+def accountPage (assets : Assets) (address : Option String) (providers : List Authentication.ProviderConfig)
     (linked : List (Authentication.Credential Todo.tenant)) (token : Option String)
     (notice : Option AccountNotice := none) : String :=
-  cardPage "Your account"
+  cardPage assets "Your account"
     ([ h2 ["Your account"] ]
       ++ (match notice with
           | none => []

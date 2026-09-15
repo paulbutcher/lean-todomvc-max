@@ -9,6 +9,7 @@ public import Html
 public import Todo.Views
 public meta import Todo.Views
 public meta import Todo.Store
+public meta import TodoTests.Harness
 
 public section
 
@@ -29,8 +30,8 @@ open Todo Html
 -- A card page runs a script only if it asked for one. Sign-in and the consent page are where a
 -- person's credentials and their answer are given, and they ask for none; a script put into
 -- `cardPage` itself rather than passed to it would run on both.
-#guard ((cardPage "heading" [] []).splitOn "<script").length == 1
-#guard ((cardPage "heading" [] [connectScript]).splitOn "<script").length == 2
+#guard ((cardPage testAssets "heading" [] []).splitOn "<script").length == 1
+#guard ((cardPage testAssets "heading" [] [testAssets.connectScript]).splitOn "<script").length == 2
 
 /-- A page carries an `hx-headers` attribute exactly when there is a token to put in it: never
 announcing a token it doesn't have, and never silently dropping one it does (which would make

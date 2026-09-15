@@ -100,7 +100,7 @@ private def siteOf (store : Store) (site : Authorization.Site := authorization) 
   let sessions ← Middleware.MemoryStore.new
   let auth : StatelessHandler :=
     { onRequest := fun _ => "no sign-in here" |> Response.notFound.text }
-  pure (Todo.server (fixedIdentity alice (← IO.mkRef 0)) auth store assistant sessions
+  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) auth store assistant sessions
     site (← oauthRoutesOn)).onRequest
 
 private def call (body : String) (credential : Option String := some s!"Bearer {fullAccess}") :
@@ -336,7 +336,7 @@ private def someContext (loopbackOnly : Bool := false) :
 name the client gave itself is never the only thing shown: a name is a string it chose, and the
 host beside it is not. -/
 private def testTheConsentPageSaysWhoIsAskingAndWhereTheAnswerGoes : IO Unit := do
-  let page := consentPage (someContext)
+  let page := consentPage testAssets (someContext)
   checkEq "the name the client gave itself" true (mentions page "Some Agent")
   checkEq "the host that vouches for it" true (mentions page "agent.example")
   checkEq "and the anti-forgery token, without which the answer cannot be posted" true
@@ -345,8 +345,8 @@ private def testTheConsentPageSaysWhoIsAskingAndWhereTheAnswerGoes : IO Unit := 
 /-- A client running on the person's own machine gets a warning of its own, because no document
 can establish who is listening on a port of theirs. -/
 private def testALoopbackClientIsCalledOut : IO Unit := do
-  let ordinary := consentPage (someContext)
-  let loopback := consentPage (someContext (loopbackOnly := true))
+  let ordinary := consentPage testAssets (someContext)
+  let loopback := consentPage testAssets (someContext (loopbackOnly := true))
   checkEq "the ordinary one says nothing about this device" false
     (mentions ordinary "on this device")
   checkEq "the loopback one does" true (mentions loopback "on this device")
@@ -354,7 +354,7 @@ private def testALoopbackClientIsCalledOut : IO Unit := do
 /-- The page puts every scope on offer behind the field name the handler reads it back under.
 One name per scope is what makes the answer say which were left ticked rather than how many. -/
 private def testEachScopeIsItsOwnAnswer : IO Unit := do
-  let page := consentPage (someContext)
+  let page := consentPage testAssets (someContext)
   for scope in [Authorization.read, Authorization.write] do
     checkEq s!"{scope.value} has a box" true
       (mentions page scope.approvalField)
