@@ -73,10 +73,6 @@ export AWS_REGION=<region>
 export BEDROCK_MODEL=<model-or-inference-profile-id>
 ```
 
-## Bringing your own agent (MCP support)
-
-An agent of your own can reach the same tools the panel has, over [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent at the endpoint and it will find its own way in. Instructions for helping the agent to do so at `/connect`.
-
 ## Deploying
 
 [template.yaml](template.yaml) defines an AWS [SAM](https://aws.amazon.com/serverless/sam/) deployment: a VPC with egress through a NAT gateway, an RDS Postgres, the function behind a public function URL, interface endpoints for SES and Bedrock, secrets, a log group, a dashboard and its saved queries.
@@ -112,6 +108,10 @@ You may find that you need to set `DOCKER_HOST` if `sam` reports no container ru
 ```
 export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
 ```
+
+## Bringing your own agent (MCP support)
+
+An agent of your own can reach the same tools the panel has, over [MCP](https://modelcontextprotocol.io) at `/mcp`. There is nothing to configure: point the agent at the endpoint and it will find its own way in. Instructions for helping the agent to do so at `/connect`.
 
 ## Telemetry
 
