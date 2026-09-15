@@ -12,6 +12,7 @@ public import AuthenticationOidcHttp
 public import AuthenticationPostgres
 public import Postgres
 public import Middleware
+public import Telemetry
 public import Todo.AuthMail
 public import Todo.Authorization
 public import Todo.AuthViews
@@ -139,6 +140,24 @@ def site (pool : _root_.Postgres.Pool) (settings : Settings)
     oidc
     settings }
 
+/-- Where a refused federated sign-in is written down, since every one of them renders the same
+page and that page is the only other thing that happens.
+
+A log record rather than a span attribute, and an unparented one: the port is `IO`, so neither
+the request's span nor anything else is in scope to hang it under. It is found by its attributes
+rather than by the trace it belongs to.
+
+`warn` rather than `error`: a provider having a bad afternoon, a deployment whose secret will not
+open, and somebody who changed their mind at the provider all arrive here, and none of them is
+this process failing. Which it was is `auth.refusal`.
+
+The tenant is not recorded. There is one, so a name that never varies separates nothing. -/
+private def observeRefusal (_tenant : TenantId) (provider : ProviderId)
+    (reason : Authentication.OidcHttp.Refusal) : IO Unit :=
+  Telemetry.runTelemetry <| Telemetry.warn "federated sign-in refused"
+    [("auth.provider", .str (Todo.Federation.label provider)),
+     ("auth.refusal", .str reason.name)]
+
 namespace Site
 
 def config (s : Site) : TenantConfig Todo.tenant := tenantConfig s.settings Todo.tenant
@@ -180,6 +199,7 @@ def federatedRoutes (s : Site) : List (Routing.Route Routing.Result) :=
         oidc
         tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
         refusedPage := Todo.federationRefusedPage
+        observeRefusal
         notFoundPage := Todo.notFoundPage }
 
 end Site
@@ -191,12 +211,17 @@ def sessionCookie : String := "auth_session"
 private def presented (req : Request Body.Stream) : Option CredentialValue :=
   ((req.extensions.get Middleware.Cookies).bind (·.get sessionCookie)).map (⟨·⟩)
 
-/-- Who the request is, or nobody. -/
+/-- Who the request is, or nobody.
+
+Three of the four reasons a cookie names nobody are a session reaching the end of its life, and
+the fourth is a cookie from another database; each arrives on every request a signed-out browser
+makes, so recording them here would cost a line per request to say somebody is signed out. The
+one place the difference decides anything is a link start, which the library observes itself. -/
 private def identify (s : Site) (req : Request Body.Stream) : IO (Option Todo.Account) := do
   match presented req with
   | none => pure none
   | some credential =>
-    pure ((← Service.identify s.ports s.config credential).map (·.account))
+    pure ((← Service.identify s.ports s.config credential).toOption.map (·.account))
 
 /-- The address the account signs in with, which is the only thing about it worth showing. -/
 private def addressOf (s : Site) (account : Todo.Account) : IO (Option String) := do
