@@ -1,7 +1,3 @@
-  # The assistant reaches Bedrock the same way mail reaches SES, and for the same reason: a turn
-  # is the largest traffic this application carries, and it has an endpoint to stay inside.
-  # How the function reaches SES. The NAT gateway would carry it, but an interface endpoint keeps
-  # the traffic on the AWS network and off a path that is charged by the gigabyte.
 # Copyright (c) 2026 Paul Butcher. All rights reserved.
 # Released under Apache 2.0 license as described in the file LICENSE.
 
