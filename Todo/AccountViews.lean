@@ -6,6 +6,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Html
+public import Middleware
 public import Todo.AuthViews
 public import Todo.Federation
 public import Todo.Views
@@ -67,7 +68,7 @@ private def connectForm (provider : Authentication.ProviderConfig) :
 private def disconnectForm (provider : Authentication.ProviderConfig)
     (credential : Authentication.CredentialId Todo.tenant) (token : Option String) : Node .flow :=
   form
-    (hidden "token" token ++ hidden "credential" (some credential.value)
+    (hidden ({} : Middleware.AntiForgeryOptions).paramName token ++ hidden "credential" (some credential.value)
       ++ [(button [s!"Disconnect {Todo.Federation.label provider.id}"] { class_ := "quiet" }
             : Node .flow)])
     { method := "post", action := links.accountUnlink }
