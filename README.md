@@ -90,7 +90,7 @@ Answer yes to "Allow SAM CLI IAM role creation" and "Function Function Url has n
 
 A sign-in link has to name an origin, and the function URL is not knowable until the function exists, so deploy a second time with `BaseUrl` set to what the first deploy printed (either run `sam deploy --guided` a second time or edit the created `samconfig.toml`).
 
-Federated providers are configured on that second deploy too, because the redirect URIs you register need the same base URL. The first deploy prints what to register as `FederatedCallback`, with `google`, `apple` or `github` in place of `<provider>`. Mint the sealing key as above, seal each secret against it, and set `SealingKey` along with the sealed values. The stack takes the key rather than generating one: it is 32 bytes in base64url rather than a string of random characters, which is not something `GenerateSecretString` can produce.
+Federated providers (see later) are configured on that second deploy too, because the redirect URIs you register need the same base URL. The first deploy prints what to register as `FederatedCallback`, with `google`, `apple` or `github` in place of `<provider>`.
 
 For the assistant, set `BedrockModel` to an id enabled in your region. Most current models are reachable only through a cross-region inference profile, which `aws bedrock list-inference-profiles` lists. A Marketplace-served model enables itself on first invocation, and that invocation must come from a principal holding `aws-marketplace:Subscribe`, so prime it once from an administrative identity:
 
@@ -147,6 +147,17 @@ lake exe auth-seal seal todomvc apple signing-key 1 < AuthKey_XXXX.p8
 ```
 
 What it prints is what the corresponding variable is set to: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, and for Apple `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_SIGNING_KEY`. A client id that is set with anything else about it missing or unreadable stops the application from starting, rather than quietly dropping that provider from the sign-in page.
+
+On a deployment those are stack parameters and the key is not, because a sealed secret in a parameter file discloses nothing only so long as the key that opens it is somewhere else. It goes to the secret the stack prints as `SealingKeySecret`:
+
+```
+aws secretsmanager put-secret-value \
+  --secret-id "$(aws cloudformation describe-stacks --stack-name todomvc \
+    --query "Stacks[0].Outputs[?OutputKey=='SealingKeySecret'].OutputValue" --output text)" \
+  --secret-string "$AUTH_SEALING_KEY"
+```
+
+The function reads that secret when it is deployed rather than per request, so the deploy has to follow the write, not precede it.
 
 `/account` is where somebody connects a provider to the account they are already signed in as, and disconnects one. That is not the same operation as signing in with it: it is the only way to use a provider that hides the address, Apple's Hide My Email in particular, since there is then no address to recognise an existing account by. Disconnecting the last way into an account is refused.
 

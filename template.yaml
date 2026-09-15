@@ -72,25 +72,14 @@ Parameters:
       under a key this deployment no longer holds cannot be opened, and the provider it belongs
       to stops working.
 
-  # Supplied rather than generated, because it is not a string of random characters: it is 32
-  # bytes written in base64url, and the last character of those 43 carries only two bits. A
-  # generator drawing characters from an alphabet has no way to respect that, and three in four
-  # of the keys it drew would not decode.
-  SealingKey:
-    Type: String
-    Default: ""
-    NoEcho: true
-    Description: >-
-      The key every sealed provider secret is opened under, as `lake exe auth-seal key` mints it.
-      Empty where no provider is configured, since nothing then needs opening.
-
   # The three federated providers. Each is offered only where its client id is set, so a
   # deployment that wants none leaves all of these alone and gets the emailed link by itself.
   #
   # The secrets are parameters rather than Secrets Manager entries because they are already
   # ciphertext: `lake exe auth-seal` binds each to this tenant, this provider and this field
-  # before it ever reaches here, and what opens them is `SealingKey` above. A sealed value in a
-  # parameter file discloses nothing without it.
+  # before it ever reaches here, and what opens them is `SealingKey` below, which is a secret and
+  # is deliberately not a parameter. A sealed value in a parameter file discloses nothing without
+  # it, which stops being true the moment the two travel together.
   GoogleClientId:
     Type: String
     Default: ""
@@ -426,6 +415,22 @@ Resources:
         ExcludePunctuation: true
         ExcludeCharacters: "ghijklmnopqrstuvwxyz"
 
+  # Opens every sealed provider secret, and so must not live where those secrets do, which is why
+  # it is here rather than beside them in the parameters.
+  #
+  # The placeholder is what this can generate and a key is not: a key is 32 bytes in base64url,
+  # and `GenerateSecretString` draws characters from an alphabet, which cannot produce the final
+  # character of a 43-character encoding. So a deployment that offers a provider writes the real
+  # key here with `aws secretsmanager put-secret-value` and deploys again to pick it up. One that
+  # offers none leaves the placeholder alone: nothing reads this until a provider is configured.
+  SealingKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Provider secret sealing key for ${AWS::StackName}"
+      # Not base64url at all, so a deployment that configures a provider and forgets to write the
+      # key is refused at startup rather than opening nothing and saying why later.
+      SecretString: "unset"
+
   # Declared rather than left to Lambda to create on first use, so that retention is this
   # template's decision and so that the saved queries and the dashboard have something to be
   # written against. The name is the one Lambda would have chosen anyway, which is what keeps
@@ -494,7 +499,7 @@ Resources:
           SESSION_KEY: !Sub "{{resolve:secretsmanager:${SessionKey}:SecretString}}"
           AUTH_PEPPER: !Sub "{{resolve:secretsmanager:${AuthPepper}:SecretString}}"
           AUTH_PEPPER_KEY_ID: !Ref PepperKeyId
-          AUTH_SEALING_KEY: !Ref SealingKey
+          AUTH_SEALING_KEY: !Sub "{{resolve:secretsmanager:${SealingKey}:SecretString}}"
           AUTH_SEALING_KEY_ID: !Ref SealingKeyId
           GOOGLE_CLIENT_ID: !Ref GoogleClientId
           GOOGLE_CLIENT_SECRET: !Ref GoogleClientSecret
@@ -686,6 +691,14 @@ Outputs:
   Dashboard:
     Description: Where the telemetry is read.
     Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${TelemetryDashboard}"
+
+  SealingKeySecret:
+    Description: >-
+      Where the key that opens provider secrets lives, holding a placeholder until a deployment
+      offers a provider. Write the key `lake exe auth-seal key` minted with
+      `aws secretsmanager put-secret-value --secret-id <this> --secret-string <the key>`, then
+      deploy again: the function reads this at deploy time, not per request.
+    Value: !Ref SealingKey
 
   FederatedCallback:
     Description: >-
