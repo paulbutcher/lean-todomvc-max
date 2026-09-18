@@ -18,7 +18,7 @@ Lean is a strongly typed functional language with a built-in theorem prover. Thi
 - **What an agent was granted bounds what it can reach.** A token that was not granted `todos:write` reaches no tool that changes anything (`nothing_mutates_without_write`).
 - **Encodings are proved to round-trip.** What is written to a chat row is what is read back from it (`toMsg_ofMsg`), which matters because the conversation is replayed to the model in full on every turn. Underneath, leancrypto proves `decode (encode bytes) = some bytes` for hex, base64, base64url and Crockford base32, that its modular exponentiation agrees with `base ^ exponent % modulus`, and that its early-exit-free comparison is equality.
 
-[^note]: there are a couple of places where we rely on bindings to libraries such as libcrypto and libcurl.
+[^note]: there are a few places where we rely on bindings to libraries such as libcrypto and libcurl, plus obviously we can make no such guarantees when talking to things like Postgres. But these are very well tested and are unlikely to be the source of errors compared to application code.
 
 ## The stack
 
