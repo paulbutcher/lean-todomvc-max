@@ -10,7 +10,7 @@ The UI is HTMX plus a very little JavaScript.
 
 Lean is a strongly typed functional language with a built-in theorem prover. This allows us to make some very strong guarantees, including:
 
-- **Totality.** Nothing in this application is `partial` and nothing in it can panic, and the same holds of every library in the stack below. A loop that reads until its input runs out carries a bound and a proof that it decreases. `warningAsError` is on, so no unfinished proofs.
+- **Totality.** Nothing in this application is `partial` and nothing in it can panic, and the same holds of (almost; there are a couple of places where we rely on bindings to libraries such as libcrypto and libcurl) every library in the stack below. A loop that reads until its input runs out carries a bound and a proof that it decreases. `warningAsError` is on, so no unfinished proofs.
 - **Security properties are theorems.** A page carries its anti-forgery attribute exactly when it has a token to put in it (`csrfAttrs_nonempty_iff`): never announcing one it lacks, never dropping one it has. A sign-in refusal is proved to speak only about the request and never about who owns the address (`onlySpeaksAboutTheRequest`), stated over the whole outcome type.
 - **Markup is typed and formally verified.** A `<div>` inside a `<p>` is a type error, text content is escaped on the way in, and `Node.render_wellFormed` proves that what comes out is well-formed HTML.
 - **Routes are strongly typed.** A handler of the wrong arity or the wrong type does not compile, and a link cannot drift from the route that serves it.
