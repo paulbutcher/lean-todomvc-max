@@ -1,6 +1,6 @@
 # TodoMVC Max
 
-[TodoMVC](https://todomvc.com) in Lean 4, plus everything a production application needs around it: passwordless sign-in, SQL migrations, telemetry, an LLM assistant panel via Bedrock, an MCP endpoint your own agent can use, and IaC deployment to AWS Lambda.
+[TodoMVC](https://todomvc.com) in Lean 4, plus everything a production application needs around it: passwordless sign-in, SQL migrations, telemetry, an LLM assistant panel, an MCP endpoint your own agent can use, and IaC deployment to AWS Lambda.
 
 The UI is HTMX plus a very little JavaScript.
 
@@ -10,7 +10,7 @@ The UI is HTMX plus a very little JavaScript.
 
 Lean is a strongly typed functional language with a built-in theorem prover. This allows us to make some very strong guarantees, including:
 
-- **Totality.** Nothing in this application is `partial` and nothing in it can panic, and the same holds of every library in the table below. A loop that reads until its input runs out carries a bound and a proof that it decreases. `warningAsError` is on, so no unfinished proofs.
+- **Totality.** Nothing in this application is `partial` and nothing in it can panic, and the same holds of every library in the stack below. A loop that reads until its input runs out carries a bound and a proof that it decreases. `warningAsError` is on, so no unfinished proofs.
 - **Security properties are theorems.** A page carries its anti-forgery attribute exactly when it has a token to put in it (`csrfAttrs_nonempty_iff`): never announcing one it lacks, never dropping one it has. A sign-in refusal is proved to speak only about the request and never about who owns the address (`onlySpeaksAboutTheRequest`), stated over the whole outcome type.
 - **Markup is typed and formally verified.** A `<div>` inside a `<p>` is a type error, text content is escaped on the way in, and `Node.render_wellFormed` proves that what comes out is well-formed HTML.
 - **Routes are strongly typed.** A handler of the wrong arity or the wrong type does not compile, and a link cannot drift from the route that serves it.
@@ -27,7 +27,7 @@ Lean, `Std.Http.Server`, and:
 | [lean-html](https://github.com/paulbutcher/lean-html) · [lean-htmx](https://github.com/paulbutcher/lean-htmx) | typed markup and typed `hx-*` attributes |
 | [lean-routing](https://github.com/paulbutcher/lean-routing) | typed router and route table |
 | [lean-middleware](https://github.com/paulbutcher/lean-middleware) | sessions, sealed cookie store, anti-forgery, fingerprinted static files, request tracing |
-| [lean-authentication](https://github.com/paulbutcher/lean-authentication) | magic links, sessions, rate limiting, bounce handling, consent, and an OAuth 2.1 authorisation server |
+| [lean-authentication](https://github.com/paulbutcher/lean-authentication) | magic links, federated sign-in over OIDC, sessions, rate limiting, bounce handling, consent, and an OAuth 2.1 authorisation server |
 | [lean-mcp](https://github.com/paulbutcher/lean-mcp) | an MCP server over Streamable HTTP |
 | [leanpostgres](https://github.com/paulbutcher/leanpostgres) · [leanmigrate](https://github.com/paulbutcher/leanmigrate) | `libpq` bindings with a connection pool; migrations as plain SQL files |
 | [lean-telemetry](https://github.com/paulbutcher/lean-telemetry) | OpenTelemetry traces and logs |
@@ -35,7 +35,9 @@ Lean, `Std.Http.Server`, and:
 | [lean-aws](https://github.com/paulbutcher/lean-aws) · [lean-aws-lambda](https://github.com/paulbutcher/lean-aws-lambda) | SigV4 signing; the Lambda runtime interface |
 | [lean-json](https://github.com/paulbutcher/lean-json) | JSON (see below) |
 | [leancurl](https://github.com/paulbutcher/leancurl) | `libcurl` bindings |
-| [leancrypto](https://github.com/paulbutcher/leancrypto) | SHA-256, HMAC-SHA256, RSA verification, codecs, DER |
+| [leancrypto](https://github.com/paulbutcher/leancrypto) | SHA-2, HMAC, RSA signature verification, codecs, DER |
+| [lean-jose](https://github.com/paulbutcher/lean-jose) · [jose-libcrypto](https://github.com/paulbutcher/jose-libcrypto) | JWS, JWK and JWT; ECDSA for the ID token a provider signs and the assertion Apple wants |
+| [lean-libcrypto](https://github.com/paulbutcher/lean-libcrypto) | OpenSSL libcrypto bindings, and the AEAD that seals provider secrets at rest |
 
 ## Why lean-json
 
