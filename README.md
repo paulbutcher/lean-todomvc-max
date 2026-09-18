@@ -36,8 +36,8 @@ Lean, `Std.Http.Server`, and:
 | [lean-json](https://github.com/paulbutcher/lean-json) | JSON (see below) |
 | [leancurl](https://github.com/paulbutcher/leancurl) | `libcurl` bindings |
 | [leancrypto](https://github.com/paulbutcher/leancrypto) | SHA-2, HMAC, RSA signature verification, codecs, DER |
-| [lean-jose](https://github.com/paulbutcher/lean-jose) · [jose-libcrypto](https://github.com/paulbutcher/jose-libcrypto) | JWS, JWK and JWT; ECDSA for the ID token a provider signs and the assertion Apple wants |
-| [lean-libcrypto](https://github.com/paulbutcher/lean-libcrypto) | OpenSSL libcrypto bindings, and the AEAD that seals provider secrets at rest |
+| [lean-jose](https://github.com/paulbutcher/lean-jose) · [jose-libcrypto](https://github.com/paulbutcher/jose-libcrypto) | JWS, JWK and JWT; ECDSA for the ID token |
+| [lean-libcrypto](https://github.com/paulbutcher/lean-libcrypto) | OpenSSL libcrypto bindings |
 
 ## Why lean-json
 
