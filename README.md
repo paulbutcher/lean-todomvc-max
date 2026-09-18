@@ -10,13 +10,15 @@ The UI is HTMX plus a very little JavaScript.
 
 Lean is a strongly typed functional language with a built-in theorem prover. This allows us to make some very strong guarantees, including:
 
-- **Totality.** Nothing in this application is `partial` and nothing in it can panic, and the same holds of (almost; there are a couple of places where we rely on bindings to libraries such as libcrypto and libcurl) every library in the stack below. A loop that reads until its input runs out carries a bound and a proof that it decreases. `warningAsError` is on, so no unfinished proofs.
+- **Totality.** Nothing in this application is `partial` and nothing in it can panic, and the same holds of (almost[^note]) every library in the stack below. A loop that reads until its input runs out carries a bound and a proof that it decreases. `warningAsError` is on, so no unfinished proofs.
 - **Security properties are theorems.** A page carries its anti-forgery attribute exactly when it has a token to put in it (`csrfAttrs_nonempty_iff`): never announcing one it lacks, never dropping one it has. A sign-in refusal is proved to speak only about the request and never about who owns the address (`onlySpeaksAboutTheRequest`), stated over the whole outcome type.
 - **Markup is typed and formally verified.** A `<div>` inside a `<p>` is a type error, text content is escaped on the way in, and `Node.render_wellFormed` proves that what comes out is well-formed HTML.
 - **Routes are strongly typed.** A handler of the wrong arity or the wrong type does not compile, and a link cannot drift from the route that serves it.
 - **Markdown is formally verified.** lean-markdown is total, never panicking or looping on any input including adversarial input. `renderHtmlSafe` is proved to emit well-formed HTML in which no string from the document can produce markup or break out of an attribute.
 - **What an agent was granted bounds what it can reach.** A token that was not granted `todos:write` reaches no tool that changes anything (`nothing_mutates_without_write`).
 - **Encodings are proved to round-trip.** What is written to a chat row is what is read back from it (`toMsg_ofMsg`), which matters because the conversation is replayed to the model in full on every turn. Underneath, leancrypto proves `decode (encode bytes) = some bytes` for hex, base64, base64url and Crockford base32, that its modular exponentiation agrees with `base ^ exponent % modulus`, and that its early-exit-free comparison is equality.
+
+[^note]: there are a couple of places where we rely on bindings to libraries such as libcrypto and libcurl.
 
 ## The stack
 
