@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Paul Butcher. All rights reserved.
+# Released under Apache 2.0 license as described in the file LICENSE.
+
+name: Bump dependencies
+
+on:
+  schedule: [{ cron: '0 6 * * 1' }]
+  repository_dispatch: { types: [lean-dependency-released] }
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: paulbutcher/lean-bump@v1
+        with:
+          token: ${{ secrets.LEAN_BUMP_TOKEN }}
