@@ -38,7 +38,7 @@ private def linkedTo (linked : List (Authentication.Credential Todo.tenant))
   (linked.find? fun credential =>
     match credential.descriptor with
     | .federatedIdentity identity => identity.issuer == provider.issuer
-    | .emailAddress _ => false).map (·.id)
+    | .emailAddress _ | .passkey _ => false).map (·.id)
 
 private def noticeText : AccountNotice → String
   | .disconnected name => s!"{name} is disconnected. Signing in with it would start a new account."

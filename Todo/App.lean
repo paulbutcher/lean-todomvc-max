@@ -46,7 +46,7 @@ on what they are for: a page keeps none, and an authorization request is nothing
 carrying them is what lets one survive a detour through signing in. The allowlist is matched
 against the path alone, so nothing here can widen what a `returnTo` may name.
 
-The one reader left that takes its parameters from the extension rather than from `withParams`,
+The one reader left that takes its parameters from the extension rather than `Extract.params`,
 because this runs for a request with no session on any route, which is outside it. Losing the
 query here costs a redirect back to a less specific page; refusing to redirect at all would cost
 the sign-in. -/
@@ -290,7 +290,7 @@ def accountUnlinkHandler (assets : Assets) (identity : Identity)
         match credential.descriptor with
         | .federatedIdentity identity =>
           (providers.find? (·.issuer == identity.issuer)).map (Todo.Federation.label ·.id)
-        | .emailAddress _ => none)
+        | .emailAddress _ | .passkey _ => none)
       |>.getD "that provider"
     let outcome ← (identity.unlink account ⟨raw⟩ : IO _)
     let notice : AccountNotice := match outcome with
@@ -320,7 +320,7 @@ def signOutHandler (identity : Identity) (account : Account) (req : Request Body
   let response ← Response.ok.html ""
   pure (withHeader { response with
     line := { response.line with
-      headers := response.line.headers.insert Header.Name.setCookie cleared } }
+      headers := response.line.headers.insert Std.Http.Header.Name.setCookie cleared } }
     (Header.Name.mk "hx-redirect") signInPath)
 
 /-! ## The assistant panel -/
@@ -505,6 +505,8 @@ def app (assets : Assets) (identity : Identity) (store : Store) (assistant : Ass
   let byId (handler : Store → Account → Nat → Request Body.Stream →
       ContextAsync (Response Body.Any)) := fun id =>
     guarded identity (handler store · id ·)
+  let withParams (handler : Params → Request Body.Stream → ContextAsync (Response Body.Any)) :=
+    extract (params ← Extract.params) => handler params
   toHandler ([
     .get patterns.index (guarded identity (pageHandler assets .all store assistant identity)),
     .get patterns.active (guarded identity (pageHandler assets .active store assistant identity)),

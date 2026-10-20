@@ -246,7 +246,7 @@ private def linked (s : Site) (account : Todo.Account) : IO (List (Credential To
 address can no longer be mailed and whose only provider has gone is one nobody can reach. -/
 private def unlink (s : Site) (account : Todo.Account) (credential : CredentialId Todo.tenant) :
     IO (Except Service.UnlinkRefusal Unit) :=
-  Service.unlinkIdentity s.ports account credential
+  Service.unlinkIdentity s.ports s.config account credential
 
 /-- What the application needs of a signed-in person, as operations rather than as the `Site`
 they are reached through. Same reason `Todo.Store` is a record: the handlers can then be driven

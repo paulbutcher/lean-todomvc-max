@@ -60,7 +60,7 @@ private def testEditingAnItemThatIsGone : IO Unit := do
 /-- A form carrying no `title` is refused rather than creating an item with no title.
 
 Posted by a browser, so that what is being refused is an empty form rather than an absent parser.
-Without the parser the handler cannot tell the two apart, which is the reading `withParams` exists
+Without the parser the handler cannot tell the two apart, which is the reading `Extract.params` exists
 to remove and which made this test pass for the wrong reason. -/
 private def testCreateWithoutATitle : IO Unit := do
   let store ← memoryStore alice #[]
