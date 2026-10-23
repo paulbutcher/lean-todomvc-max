@@ -196,12 +196,11 @@ private def testAssistantMarkdownCannotInjectMarkup : IO Unit := do
 
 /-! ## The panel's routes -/
 
-/-- The routes under `params`, and nothing else. A prompt arrives as a form field, so the routes
-alone cannot read one; the rest of the stack `Todo.server` wraps them in is not what is being
-checked here, and the `antiForgery` in it would refuse a post carrying no token. -/
-private def panelOf (assistant : Assistant) (store : Store) : IO TestHandler := do
-  pure (Middleware.apply [Middleware.params]
-    (Todo.app testAssets (fixedIdentity alice (← IO.mkRef 0)) store assistant noGrants)).onRequest
+/-- A browser holding the index page, which is where the panel and its token are. -/
+private def panelOf (assistant : Assistant) (store : Store) : IO Middleware.Test.Browser := do
+  let browser ← browserOn (fixedIdentity alice (← IO.mkRef 0)) store assistant
+  discard <| browser.get links.index
+  pure browser
 
 /-- The conversation as a pair per message, since `LLMClient.Msg` has no `Repr` for a failure to
 be reported through. What each message is and what it says is the whole of what these check. -/
@@ -213,9 +212,8 @@ private def transcriptOf (assistant : Assistant) (account : Account := alice) :
     | .assistant text _ => ("assistant", text)
     | .toolResult id .. => ("tool", id)
 
-private def sendPrompt (body : String) : String :=
-  mkPost "/chat" body
-    "Content-Type: application/x-www-form-urlencoded\x0d\nConnection: close\x0d\n"
+private def sendPrompt (browser : Middleware.Test.Browser) (prompt : String) : IO ByteArray :=
+  browser.post links.chat [("prompt", prompt)] (placement := .header)
 
 /-- The prompt is on the page before the model has said anything: the request that carries it
 stores it and answers with the transcript it is now in, rather than waiting out the turn. The gate
@@ -227,12 +225,11 @@ private def testAPromptIsShownBeforeTheModelReplies : IO Unit := do
   let gate ← IO.Promise.new
   let assistant ← scriptedAssistant #[{ text := "Two todos are left." }] (gate := some gate)
   let store ← memoryStore alice #[alpha]
-  let handler ← panelOf assistant store
+  let browser ← panelOf assistant store
   whileHeld gate do
-    check "POST /chat" (sendPrompt "prompt=what+is+left") handler
-      fun response => do
-        assertContains response "what is left"
-        assertAbsent response "Two todos are left."
+    let response ← sendPrompt browser "what is left"
+    assertContains response "what is left"
+    assertAbsent response "Two todos are left."
   awaitTurn assistant.turns alice "the scripted turn"
   checkEq "the prompt and the reply, in that order"
     #[("user", "what is left"), ("assistant", "Two todos are left.")] (← transcriptOf assistant)
@@ -244,11 +241,10 @@ private def testASecondPromptDuringATurnIsDropped : IO Unit := do
   let assistant ← scriptedAssistant #[{ text := "first" }, { text := "second" }]
     (gate := some gate)
   let store ← memoryStore alice #[]
-  let handler ← panelOf assistant store
+  let browser ← panelOf assistant store
   whileHeld gate do
-    check "the first prompt" (sendPrompt "prompt=one") handler fun _ => pure ()
-    check "the second, mid-turn" (sendPrompt "prompt=two") handler fun response =>
-      assertAbsent response "two"
+    discard <| sendPrompt browser "one"
+    assertAbsent (← sendPrompt browser "two") "two"
   awaitTurn assistant.turns alice "the first turn"
   checkEq "only the first was ever stored" #[("user", "one"), ("assistant", "first")]
     (← transcriptOf assistant)
@@ -258,8 +254,7 @@ stray Enter would spend a model call on an empty string. -/
 private def testABlankPromptStartsNothing : IO Unit := do
   let assistant ← scriptedAssistant #[]
   let store ← memoryStore alice #[]
-  check "POST /chat with only spaces" (sendPrompt "prompt=+++") (← panelOf assistant store)
-    fun _ => pure ()
+  discard <| sendPrompt (← panelOf assistant store) "   "
   checkEq "nothing was stored" 0 (← transcriptOf assistant).size
   checkEq "and no turn was started" none (((← assistant.turns.get alice)).map (·.phase))
 
@@ -267,12 +262,10 @@ private def testABlankPromptStartsNothing : IO Unit := do
 private def testResetForgetsTheConversation : IO Unit := do
   let assistant ← scriptedAssistant #[{ text := "hello" }]
   let store ← memoryStore alice #[]
-  let handler ← panelOf assistant store
-  check "a prompt" (sendPrompt "prompt=hello+there") handler fun _ => pure ()
+  let browser ← panelOf assistant store
+  discard <| sendPrompt browser "hello there"
   awaitTurn assistant.turns alice "the scripted turn"
-  check "DELETE /chat"
-    "DELETE /chat HTTP/1.1\x0d\nHost: example.com\x0d\nConnection: close\x0d\n\x0d\n" handler
-    fun response => assertAbsent response "hello there"
+  assertAbsent (← sendDelete browser links.chat) "hello there"
   checkEq "the transcript is empty" 0 (← transcriptOf assistant).size
 
 /-- The swap that carries the reply is the same swap that stops the asking. Nothing else tells the
@@ -282,13 +275,12 @@ private def testAFinishedTurnStopsThePolling : IO Unit := do
   let gate ← IO.Promise.new
   let assistant ← scriptedAssistant #[{ text := "All done." }] (gate := some gate)
   let store ← memoryStore alice #[]
-  let handler ← panelOf assistant store
+  let browser ← panelOf assistant store
   whileHeld gate do
-    check "a prompt" (sendPrompt "prompt=anything") handler fun response =>
-      assertContains response links.chatStatus
-  check "GET /chat/status" (mkGetClose "/chat/status") handler fun response => do
-    assertContains response "All done."
-    assertAbsent response links.chatStatus
+    assertContains (← sendPrompt browser "anything") links.chatStatus
+  let response ← browser.get links.chatStatus
+  assertContains response "All done."
+  assertAbsent response links.chatStatus
 
 /-- A turn that never got an answer says so, once. The failure is not in the transcript (nothing
 was said to record), so it lives until a poll reads it; a poll that left it there would report the
@@ -297,14 +289,13 @@ private def testAFailedTurnIsReportedOnce : IO Unit := do
   -- No replies scripted, so the provider refuses and `converseLoop` returns the error.
   let assistant ← scriptedAssistant #[]
   let store ← memoryStore alice #[]
-  let handler ← panelOf assistant store
-  check "a prompt" (sendPrompt "prompt=anything") handler fun _ => pure ()
+  let browser ← panelOf assistant store
+  discard <| sendPrompt browser "anything"
   awaitTurn assistant.turns alice "the failing turn"
-  check "the poll that reads the failure" (mkGetClose "/chat/status") handler fun response => do
-    assertContains response "went wrong"
-    assertAbsent response links.chatStatus
-  check "the next one" (mkGetClose "/chat/status") handler fun response =>
-    assertAbsent response "went wrong"
+  let failure ← browser.get links.chatStatus
+  assertContains failure "went wrong"
+  assertAbsent failure links.chatStatus
+  assertAbsent (← browser.get links.chatStatus) "went wrong"
 
 /-- A turn can fail on the round trip that follows its tool calls, by which point those calls have
 already changed the list. The transcript has to say so: a conversation that performed a deletion
@@ -318,7 +309,7 @@ private def testAFailedTurnStillRecordsWhatItsToolsDid : IO Unit := do
     #[{ text := "", toolCalls := #[{ id := "call_1", name := "add_todo",
                                      input := Json.mkObj [("title", "gamma")] }] }]
   let store ← memoryStore alice #[]
-  check "a prompt" (sendPrompt "prompt=add+gamma") (← panelOf assistant store) fun _ => pure ()
+  discard <| sendPrompt (← panelOf assistant store) "add gamma"
   awaitTurn assistant.turns alice "the turn that fails after its tool ran"
   checkEq "the tool really did change the list" #[("gamma", false)] (← titlesOf store)
   checkEq "and the transcript says so, closing with a reply the next turn can follow"
@@ -340,7 +331,7 @@ private def testOnlyToolsThatChangedSomethingAreCounted : IO Unit := do
   let countAfter (title : String) : IO (Option Nat) := do
     let assistant ← scriptedAssistant (calling title)
     let store ← memoryStore alice #[]
-    check "a prompt" (sendPrompt "prompt=add+it") (← panelOf assistant store) fun _ => pure ()
+    discard <| sendPrompt (← panelOf assistant store) "add it"
     awaitTurn assistant.turns alice "the turn that fails after its tool ran"
     pure ((← assistant.turns.get alice).map (·.mutations))
   checkEq "a call that added something counts" (some 1) (← countAfter "gamma")
@@ -351,7 +342,7 @@ its own would be noise in a transcript that already ends on the unanswered promp
 private def testAFailureBeforeAnyToolRecordsNothing : IO Unit := do
   let assistant ← scriptedAssistant #[]
   let store ← memoryStore alice #[]
-  check "a prompt" (sendPrompt "prompt=anything") (← panelOf assistant store) fun _ => pure ()
+  discard <| sendPrompt (← panelOf assistant store) "anything"
   awaitTurn assistant.turns alice "the turn that fails outright"
   checkEq "the prompt stands alone" #[("user", "anything")] (← transcriptOf assistant)
 
@@ -368,14 +359,13 @@ private def testAToolChangeReachesTheTodoList : IO Unit := do
                                      input := Json.mkObj [("title", "gamma")] }] },
       { text := "Added it." }]
   let store ← memoryStore alice #[]
-  let handler ← panelOf assistant store
-  check "a prompt" (sendPrompt "prompt=add+gamma") handler fun _ => pure ()
+  let browser ← panelOf assistant store
+  discard <| sendPrompt browser "add gamma"
   awaitTurn assistant.turns alice "the turn that adds"
-  check "the poll carrying the reply" (mkGetClose "/chat/status?seen=0") handler
-    fun response => do
-      assertContains response "Added it."
-      assertContains response "gamma"
-      assertContains response "hx-swap-oob"
+  let response ← browser.get "/chat/status?seen=0"
+  assertContains response "Added it."
+  assertContains response "gamma"
+  assertContains response "hx-swap-oob"
 
 /-- The other half: a poll that has nothing new to report leaves the list alone. Re-swapping it on
 every poll would work, and would also throw away a todo the person was part-way through editing,
@@ -387,11 +377,10 @@ private def testAPollWithNothingNewLeavesTheListAlone : IO Unit := do
   let gate ← IO.Promise.new
   let assistant ← scriptedAssistant #[{ text := "hello" }] (gate := some gate)
   let store ← memoryStore alice #[alpha]
-  let handler ← panelOf assistant store
+  let browser ← panelOf assistant store
   whileHeld gate do
-    check "a prompt" (sendPrompt "prompt=anything") handler fun _ => pure ()
-    check "a poll drawn against the same count" (mkGetClose "/chat/status?seen=0") handler
-      fun response => assertAbsent response "hx-swap-oob"
+    discard <| sendPrompt browser "anything"
+    assertAbsent (← browser.get "/chat/status?seen=0") "hx-swap-oob"
   awaitTurn assistant.turns alice "the gated turn"
 
 def runChatTests : IO Unit := do

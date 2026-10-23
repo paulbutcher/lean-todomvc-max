@@ -21,26 +21,22 @@ open Telemetry (runTelemetry)
 private def active : Item := { id := 1, title := "alpha", completed := false }
 private def completed : Item := { id := 2, title := "beta", completed := true }
 
-private def signedInAs (account : Account) (initial : Array Item) : IO TestHandler := do
-  let store ← memoryStore account initial
-  pure (Todo.app testAssets (fixedIdentity account (← IO.mkRef 0)) store
-    (← scriptedAssistant #[]) noGrants).onRequest
-
-private def handlerOf (initial : Array Item) : IO TestHandler := signedInAs alice initial
+private def browserOf (initial : Array Item) : IO Middleware.Test.Browser := do
+  browserFor (← memoryStore alice initial)
 
 /-- The list a page shows is the filtered one, but the count it reports is over every item, so a
 filtered view still tells you how much is left overall. -/
 private def testPageFiltersItemsButCountsThemAll : IO Unit := do
-  check "GET /completed" (mkGetClose "/completed") (← handlerOf #[active, completed])
-    fun response => do
-      assertContains response "beta"
-      assertAbsent response "alpha"
-      assertContains response "1 item left"
+  let response ← (← browserOf #[active, completed]).get "/completed"
+  assertContains response "beta"
+  assertAbsent response "alpha"
+  assertContains response "1 item left"
 
 private def toggleFrom (currentUrl : String) (expect : ByteArray → IO Unit) : IO Unit := do
-  check s!"POST /todos/1/toggle from {currentUrl}"
-    (mkPost "/todos/1/toggle" "" s!"HX-Current-URL: {currentUrl}\x0d\nConnection: close\x0d\n")
-    (← handlerOf #[active, completed]) expect
+  let browser ← browserOf #[active, completed]
+  discard <| browser.get Routes.links.index
+  expect (← browser.post "/todos/1/toggle" [] (placement := .header)
+    (extra := s!"HX-Current-URL: {currentUrl}\x0d\n"))
 
 /-- After a mutation the client gets back the list for the URL it is displaying, which is the
 only thing that tells the handler which filter to re-render. -/
@@ -54,8 +50,7 @@ private def testMutationRendersTheDisplayedFilter : IO Unit := do
     assertContains response "beta"
 
 private def testEditingAnItemThatIsGone : IO Unit := do
-  check "GET /todos/99/edit" (mkGetClose "/todos/99/edit") (← handlerOf #[active])
-    fun response => assertStatus response "HTTP/1.1 404"
+  assertStatus (← (← browserOf #[active]).get "/todos/99/edit") "HTTP/1.1 404"
 
 /-- A form carrying no `title` is refused rather than creating an item with no title.
 
@@ -74,37 +69,33 @@ private def testCreateWithoutATitle : IO Unit := do
 than shown somebody's list or told the item it named does not exist. -/
 private def testAnonymousRequestsAreSentToSignIn : IO Unit := do
   let store ← memoryStore alice #[active]
-  let handler :=
-    (Todo.app testAssets anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
-  check "GET / with no session" (mkGetClose "/") handler fun response => do
-    assertStatus response "HTTP/1.1 303"
-    assertContains response "/t/todomvc/signin"
-    assertAbsent response "alpha"
+  let browser ← browserOn anonymousIdentity store (← scriptedAssistant #[])
+  let response ← browser.get Routes.links.index
+  assertStatus response "HTTP/1.1 303"
+  assertContains response "/t/todomvc/signin"
+  assertAbsent response "alpha"
 
 /-- HTMX follows a redirect itself and swaps what it finds into the element it was targeting,
 which would paste the sign-in page into the todo list. A session that lapses mid-page has to make
 the browser navigate instead. -/
 private def testAnonymousHtmxRequestsAreToldToNavigate : IO Unit := do
   let store ← memoryStore alice #[active]
-  check "POST /todos/1/toggle with no session"
-    (mkPost "/todos/1/toggle" "" "HX-Request: true\x0d\nConnection: close\x0d\n")
-    (Todo.app testAssets anonymousIdentity store (← scriptedAssistant #[]) noGrants).onRequest
-    fun response => do
-      assertContains response "Redirect: /t/todomvc/signin"
-      assertAbsent response "HTTP/1.1 303"
+  let current ← IO.mkRef (some alice)
+  let browser ← browserOn (switchableIdentity current) store (← scriptedAssistant #[])
+  discard <| browser.get Routes.links.index
+  current.set none
+  let response ← browser.post "/todos/1/toggle" [] (placement := .header)
+    (extra := "HX-Request: true\x0d\n")
+  assertContains response "Redirect: /t/todomvc/signin"
+  assertAbsent response "HTTP/1.1 303"
 
 /-- The account is what scopes a list, and an id from somebody else's is not a way around it:
 reading finds nothing and mutating changes nothing. -/
 private def testOneAccountCannotReachAnother : IO Unit := do
   let store ← memoryStore alice #[active]
-  let asBob :=
-    (Todo.app testAssets (fixedIdentity bob (← IO.mkRef 0)) store (← scriptedAssistant #[])
-      noGrants).onRequest
-  check "GET / as another account" (mkGetClose "/") asBob fun response =>
-    assertAbsent response "alpha"
-  check "DELETE another account's item"
-    "DELETE /todos/1 HTTP/1.1\x0d\nHost: example.com\x0d\nConnection: close\x0d\n\x0d\n"
-    asBob fun _ => pure ()
+  let asBob ← browserFor store (account := bob)
+  assertAbsent (← asBob.get Routes.links.index) "alpha"
+  assertAbsent (← sendDelete asBob "/todos/1") "HTTP/1.1 403"
   checkEq "the item is still there" #["alpha"]
     ((← Async.block (runTelemetry (store.list alice .all))).map (·.title))
 
@@ -114,12 +105,11 @@ works in the hands of whoever recovers the cookie. -/
 private def testSignOutRevokesAndClearsTheCookie : IO Unit := do
   let store ← memoryStore alice #[]
   let revocations ← IO.mkRef 0
-  check "POST /signout" (mkPost "/signout" "" "Connection: close\x0d\n")
-    (Todo.app testAssets (fixedIdentity alice revocations) store (← scriptedAssistant #[])
-      noGrants).onRequest
-    fun response => do
-      assertContains response "auth_session="
-      assertContains response "Max-Age=0"
+  let browser ← browserOn (fixedIdentity alice revocations) store (← scriptedAssistant #[])
+  discard <| browser.get Routes.links.index
+  let response ← browser.post Routes.links.signOut [] (placement := .header)
+  assertContains response "auth_session="
+  assertContains response "Max-Age=0"
   checkEq "the session was revoked as well" 1 (← revocations.get)
 
 private def serverOf (https : Bool) : IO TestHandler := do
@@ -178,28 +168,25 @@ private def testMissesUnderTheTenantGoToTheSignInRoutes : IO Unit := do
 will be challenged toward. The page says it in prose and the discovery document says it to a
 machine; a person told a different one would set their agent up against nothing. -/
 private def testTheConnectPageNamesTheEndpointAnAgentReaches : IO Unit := do
-  check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
-    fun response => assertContains response (Authorization.resource testBase).value
+  assertContains (← (← browserOf #[]).get Routes.links.connect)
+    (Authorization.resource testBase).value
 
 /-- And every scope the server offers is explained there. One added to the registry and not to
 the page would be one somebody is asked to grant without being told what it reaches. -/
 private def testTheConnectPageExplainsEveryScopeOnOffer : IO Unit := do
-  let handler ← handlerOf #[]
+  let page ← (← browserOf #[]).get Routes.links.connect
   for scope in Authorization.scopes do
-    check s!"GET /connect, which explains {scope.value}" (mkGetClose Routes.links.connect)
-      handler fun response => assertContains response (Authorization.describe scope)
+    assertContains page (Authorization.describe scope)
 
 /-- The copy button is the one control here that does nothing without a script, so a page that
 served the button and not the script would look finished and be inert. -/
 private def testTheConnectPageServesWhatMakesTheCopyButtonWork : IO Unit := do
-  check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
-    fun response => assertContains response testAssets.connectScript.src
+  assertContains (← (← browserOf #[]).get Routes.links.connect) testAssets.connectScript.src
 
 /-- Somebody whose assistant has stopped working needs a way out of it from here, and the way out
 is a request to this application rather than something to do in the assistant. -/
 private def testTheConnectPageOffersAWayToWithdrawApprovals : IO Unit := do
-  check "GET /connect" (mkGetClose Routes.links.connect) (← handlerOf #[])
-    fun response => assertContains response Routes.links.disconnect
+  assertContains (← (← browserOf #[]).get Routes.links.connect) Routes.links.disconnect
 
 private def readOnlyAgent : Authorization.Connection :=
   connectionOf "agent-one" (some "Reader") [Authorization.read]

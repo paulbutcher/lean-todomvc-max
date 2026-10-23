@@ -23,8 +23,6 @@ open Telemetry.Testing
 
 private def active : Item := { id := 1, title := "alpha", completed := false }
 
-/-- The full stack rather than `Todo.app`, since `serverSpan` is part of the stack and not of the
-route table. -/
 private def serverOf (store : Store) : IO TestHandler := do
   let sessions ← Middleware.MemoryStore.new
   let auth : Std.Http.Server.StatelessHandler :=

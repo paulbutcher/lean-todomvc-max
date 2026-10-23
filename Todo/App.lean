@@ -490,7 +490,7 @@ private def signedIn (identity : Identity) : Extractor Account := do
 
 /-- The application's own routes. The account is extracted before anything else, so a request
 with no session is sent to sign in rather than refused for a field it could not have filled. -/
-def appRoutes (assets : Assets) (identity : Identity) (store : Store) (assistant : Assistant)
+private def appRoutes (assets : Assets) (identity : Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site)
     (oauth : List (Routing.Route Routing.Result) := [])
     (providers : List Authentication.ProviderConfig := []) : List Entry :=
@@ -532,13 +532,6 @@ def appRoutes (assets : Assets) (identity : Identity) (store : Store) (assistant
       chatStatusHandler store assistant a seen),
     .delete patterns.chat (extract (a ← signedIn identity) => chatResetHandler assistant a)
   ] ++ oauth.map .route
-
-def app (assets : Assets) (identity : Identity) (store : Store) (assistant : Assistant)
-    (authorization : Authorization.Site)
-    (oauth : List (Routing.Route Routing.Result) := [])
-    (providers : List Authentication.ProviderConfig := []) : StatelessHandler :=
-  ({ routes := appRoutes assets identity store assistant authorization oauth providers } : Router)
-    |>.toHandler
 
 /-- Where the sign-in routes answer, which is also where the mail they send points. -/
 private def tenantRoot : MountPoint := .mk ["t", Todo.tenant.value]

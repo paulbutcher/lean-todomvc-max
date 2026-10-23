@@ -107,6 +107,15 @@ def anonymousIdentity : Auth.Identity where
   linked := fun _ => pure []
   unlink := fun _ _ => pure (.error .notThisAccount)
 
+/-- Whoever `current` names, so that a test can hold a page from a signed-in session and then have
+that session lapse under it. -/
+def switchableIdentity (current : IO.Ref (Option Account)) : Auth.Identity where
+  of := fun _ => current.get
+  address := fun _ => return (← current.get).map (s!"{·.value}@example.com")
+  signOut := fun _ _ => pure ()
+  linked := fun _ => pure []
+  unlink := fun _ _ => pure (.error .notThisAccount)
+
 /-! ## The assistant -/
 
 /-- A `ChatStore` with no database behind it, keeping each account's messages apart the way the
@@ -277,13 +286,31 @@ def pageToken (body : String) : Option String :=
 /-- A browser against the whole stack, for the tests that are about what a browser can do: fetch
 a page, then post the form on it. Driving less than this passes whether or not the page renders
 a token at all, and so whether or not the form works. -/
-def browserFor (store : Store) (authorization : Authorization.Site := noGrants)
-    (account : Account := alice) : IO Middleware.Test.Browser := do
+def browserOn (identity : Auth.Identity) (store : Store) (assistant : Assistant)
+    (authorization : Authorization.Site := noGrants) : IO Middleware.Test.Browser := do
   let sessions ← Middleware.MemoryStore.new
   let signIn : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.notFound.text "no sign-in here" }
-  let handler := (Todo.server testAssets (fixedIdentity account (← IO.mkRef 0)) signIn store
-    (← scriptedAssistant #[]) sessions authorization).onRequest
+  let handler :=
+    (Todo.server testAssets identity signIn store assistant sessions authorization).onRequest
   Middleware.Test.Browser.new handler (tokenFrom := pageToken)
+
+def browserFor (store : Store) (authorization : Authorization.Site := noGrants)
+    (account : Account := alice) : IO Middleware.Test.Browser := do
+  browserOn (fixedIdentity account (← IO.mkRef 0)) store (← scriptedAssistant #[]) authorization
+
+/-- A `DELETE` as HTMX sends one, with the jar's cookies and the held token in the header
+`pageView` gives it. `Browser` has no verb for it, and a bare one is refused by `antiForgery`,
+which a test checking that nothing changed would read as a pass. -/
+def sendDelete (browser : Middleware.Test.Browser) (path : String) : IO ByteArray := do
+  let some token ← browser.token?
+    | throw <| IO.userError s!"no anti-forgery token held for DELETE {path}"
+  let cookies := String.intercalate "; " ((← browser.cookies.get).map fun (n, v) => s!"{n}={v}")
+  let captured ← IO.mkRef ByteArray.empty
+  Std.Http.Internal.Test.check s!"DELETE {path}"
+    (s!"DELETE {path} HTTP/1.1\x0d\nHost: example.com\x0d\nCookie: {cookies}\x0d\n" ++
+      s!"{Middleware.Header.Name.xCsrfToken}: {token}\x0d\nConnection: close\x0d\n\x0d\n")
+    browser.handler captured.set
+  captured.get
 
 end TodoTests
