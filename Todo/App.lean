@@ -127,25 +127,19 @@ def editHandler (store : Store) (account : Account) (id : Nat) (req : Request Bo
   | some item => Node.render (itemEditView item) |> Response.ok.html
   | none => "Not Found" |> Response.notFound.text
 
-def title? (params : Params) : Option String := params.get "title"
-
 /-- How many of the turn's mutations the fragment that sent this poll was drawn against. Missing
 or unreadable reads as none, which costs a redundant refresh rather than a missed one. -/
-def seen? (params : Params) : Nat := ((params.get "seen").bind (·.toNat?)).getD 0
+def seenCount : Extractor Nat := (fun seen => (seen.bind (·.toNat?)).getD 0) <$> Extract.field? "seen"
 
-def addHandler (store : Store) (account : Account) (params : Params)
+def addHandler (store : Store) (account : Account) (title : String)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  match title? params with
-  | some title => (store.add account title).run (parentSpan req); renderMutation store account req
-  | none => "Missing title" |> Response.badRequest.text
+  (store.add account title).run (parentSpan req)
+  renderMutation store account req
 
-def saveHandler (store : Store) (account : Account) (id : Nat) (params : Params)
+def saveHandler (store : Store) (account : Account) (id : Nat) (title : String)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  match title? params with
-  | some title =>
-    (store.setTitle account (Int64.ofNat id) title).run (parentSpan req)
-    renderMutation store account req
-  | none => "Missing title" |> Response.badRequest.text
+  (store.setTitle account (Int64.ofNat id) title).run (parentSpan req)
+  renderMutation store account req
 
 def toggleHandler (store : Store) (account : Account) (id : Nat) (req : Request Body.Stream) :
     ContextAsync (Response Body.Any) := do
@@ -169,7 +163,7 @@ def clearCompletedHandler (store : Store) (account : Account) (req : Request Bod
 
 /-- The digest the fragment that sent this poll was drawn against. Missing or unreadable matches
 no list, which costs a redundant refresh rather than a missed one. -/
-def seenDigest (params : Params) : String := (params.get "seen").getD ""
+def seenDigest : Extractor String := (·.getD "") <$> Extract.field? "seen"
 
 /-- Answers the page's standing question of whether the list it is showing is still the list the
 store holds, and says nothing at all when it is.
@@ -181,11 +175,11 @@ the assistant's own poll runs only while a turn is in flight.
 Answering with the list only when the digest has moved is not an optimisation. An unprompted swap
 discards a todo somebody is part-way through editing inline, so a poll that refreshed on every
 tick would make inline editing impossible to finish. -/
-def listStatusHandler (store : Store) (account : Account) (params : Params)
+def listStatusHandler (store : Store) (account : Account) (seen : String)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let parent := parentSpan req
   let allItems ← (store.list account .all).run parent
-  if listDigest allItems == seenDigest params then
+  if listDigest allItems == seen then
     "" |> Response.ok.html
   else
     let filter := currentFilter req
@@ -226,19 +220,10 @@ Both fields are required and neither has a default. A missing `client` cannot be
 them": that is the same request as the button beside this one, and a form that lost a hidden
 field would then withdraw everything somebody still wanted. -/
 def disconnectOneHandler (assets : Assets) (authorization : Authorization.Site) (account : Account)
-    (params : Params) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  let named := do
-    let client ← params.get "client"
-    let resource ← params.get "resource"
-    pure (client, resource)
-  match named with
-  | none =>
-    (Telemetry.info "one agent disconnect named nothing"
-      [("oauth.client_named", .str (if (params.get "client").isSome then "yes" else "no")),
-       ("oauth.resource_named", .str (if (params.get "resource").isSome then "yes" else "no"))]
-      : TelemetryT Async Unit).run (parentSpan req)
-    "Missing client or resource" |> Response.badRequest.text
-  | some (client, resource) => do
+    (client? resource? : Option String) (req : Request Body.Stream) :
+    ContextAsync (Response Body.Any) := do
+  match client?, resource? with
+  | some client, some resource => do
     -- The name is read before the withdrawal, since afterwards there is no row left to read it
     -- from and the page has to say which one went.
     let name := (← (authorization.connections account : IO _)).find?
@@ -251,6 +236,12 @@ def disconnectOneHandler (assets : Assets) (authorization : Authorization.Site) 
       : TelemetryT Async Unit).run (parentSpan req)
     connectView assets authorization account req
       (some (if withdrawn then .one name else .alreadyGone))
+  | _, _ =>
+    (Telemetry.info "one agent disconnect named nothing"
+      [("oauth.client_named", .str (if client?.isSome then "yes" else "no")),
+       ("oauth.resource_named", .str (if resource?.isSome then "yes" else "no"))]
+      : TelemetryT Async Unit).run (parentSpan req)
+    "Missing client or resource" |> Response.badRequest.text
 
 /-- What can get into this account, and the controls that change it.
 
@@ -278,9 +269,9 @@ learn which ones are real.
 The name is read before the removal, because afterwards there is no credential left to read it
 from and the page has to say which one went. -/
 def accountUnlinkHandler (assets : Assets) (identity : Identity)
-    (providers : List Authentication.ProviderConfig) (account : Account) (params : Params)
+    (providers : List Authentication.ProviderConfig) (account : Account) (credential? : Option String)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
-  match params.get "credential" with
+  match credential? with
   | none =>
     (Telemetry.info "unlink named no credential" [] : TelemetryT Async Unit).run (parentSpan req)
     "Missing credential" |> Response.badRequest.text
@@ -325,8 +316,8 @@ def signOutHandler (identity : Identity) (account : Account) (req : Request Body
 
 /-! ## The assistant panel -/
 
-def prompt? (params : Params) : Option String :=
-  (params.get "prompt").map (·.trimAscii.toString) |>.filter (!·.isEmpty)
+def prompt : Extractor (Option String) :=
+  (fun raw => raw.map (·.trimAscii.toString) |>.filter (!·.isEmpty)) <$> Extract.field? "prompt"
 
 /-- The panel's transcript, which is what every route below answers with: each of them changes
 what the conversation is and then shows what it has become, so none of them needs a reply shape
@@ -347,9 +338,9 @@ already showing the turn that is running.
 
 A blank prompt is not a turn. It re-renders, which is what an empty send should look like. -/
 def chatHandler (store : Store) (assistant : Assistant) (account : Account)
-    (params : Params) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+    (prompt : Option String) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let parent := parentSpan req
-  if let some prompt := prompt? params then
+  if let some prompt := prompt then
     if ← (assistant.turns.claim account : IO _) then
       (assistant.chat.append account #[.user prompt]).run parent
       (startTurn assistant store account parent : IO Unit)
@@ -377,7 +368,7 @@ has already stopped asking; leaving it would report the same failure against eve
 `Async.sleep` rather than blocking: this is a fiber sharing its thread with every other request in
 flight, and holding the thread for the wait would stall all of them. -/
 def chatStatusHandler (store : Store) (assistant : Assistant) (account : Account)
-    (params : Params) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+    (seen : Nat) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
   let mut turn ← (assistant.turns.get account : IO _)
   for _ in [0:pollWait] do
     if !turn.any (·.phase.isRunning) then break
@@ -390,7 +381,7 @@ def chatStatusHandler (store : Store) (assistant : Assistant) (account : Account
   -- Refreshing once more than strictly needed costs a swap; refreshing once too few leaves the
   -- person looking at a list that disagrees with what the assistant says it did.
   let ended := !turn.any (·.phase.isRunning)
-  let moved := turn.any (·.mutations > seen? params)
+  let moved := turn.any (·.mutations > seen)
   if turn.any (!·.phase.isRunning) then (assistant.turns.finish account : IO Unit)
   let conversation := Node.render (conversationView messages turn)
   let refresh ← if ended || moved then listRefresh store account req else pure ""
@@ -489,87 +480,68 @@ def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.S
 
 /-! ## The router -/
 
-/-- Everything below needs to know who is asking, so establishing it is the router's job rather
-than each handler's. A request with no live session never reaches one. -/
-private def guarded (identity : Identity)
-    (handler : Account → Request Body.Stream → ContextAsync (Response Body.Any)) :
-    Request Body.Stream → ContextAsync (Response Body.Any) := fun req => do
+/-- Who is asking. Every application route needs to know, so establishing it is the router's job
+rather than each handler's, and a request with no live session never reaches one. -/
+private def signedIn (identity : Identity) : Extractor Account := do
+  let req ← read
   match ← (identity.of req : IO _) with
-  | some account => handler account req
-  | none => toSignIn req
+  | some account => pure account
+  | none => Extract.refuse (toSignIn req)
+
+/-- The application's own routes. The account is extracted before anything else, so a request
+with no session is sent to sign in rather than refused for a field it could not have filled. -/
+def appRoutes (assets : Assets) (identity : Identity) (store : Store) (assistant : Assistant)
+    (authorization : Authorization.Site)
+    (oauth : List (Routing.Route Routing.Result) := [])
+    (providers : List Authentication.ProviderConfig := []) : List Entry :=
+  let page (filter : Filter) := extract (a ← signedIn identity) =>
+    pageHandler assets filter store assistant identity a
+  let byId (handler : Store → Account → Nat → Request Body.Stream →
+      ContextAsync (Response Body.Any)) (id : Nat) :=
+    extract (a ← signedIn identity) => handler store a id
+  [ .get patterns.index (page .all),
+    .get patterns.active (page .active),
+    .get patterns.completed (page .completed),
+    .post patterns.todos (extract (a ← signedIn identity) (title ← Extract.field "title") =>
+      addHandler store a title),
+    .get patterns.todosStatus (extract (a ← signedIn identity) (seen ← seenDigest) =>
+      listStatusHandler store a seen),
+    .get patterns.edit (byId editHandler),
+    .put patterns.todo fun id => extract (a ← signedIn identity) (title ← Extract.field "title") =>
+      saveHandler store a id title,
+    .post patterns.toggle (byId toggleHandler),
+    .delete patterns.todo (byId deleteHandler),
+    .post patterns.toggleAll (extract (a ← signedIn identity) => toggleAllHandler store a),
+    .delete patterns.clearCompleted (extract (a ← signedIn identity) => clearCompletedHandler store a),
+    .post patterns.signOut (extract (a ← signedIn identity) => signOutHandler identity a),
+    .get patterns.account (extract (a ← signedIn identity) =>
+      accountHandler assets identity providers a),
+    .post patterns.accountUnlink
+      (extract (a ← signedIn identity) (credential ← Extract.field? "credential") =>
+        accountUnlinkHandler assets identity providers a credential),
+    .get patterns.connect (extract (a ← signedIn identity) => connectHandler assets authorization a),
+    .post patterns.disconnect (extract (a ← signedIn identity) =>
+      disconnectHandler assets authorization a),
+    .post patterns.disconnectOne
+      (extract (a ← signedIn identity) (client ← Extract.field? "client")
+          (resource ← Extract.field? "resource") =>
+        disconnectOneHandler assets authorization a client resource),
+    .post patterns.chat (extract (a ← signedIn identity) (p ← prompt) =>
+      chatHandler store assistant a p),
+    .get patterns.chatStatus (extract (a ← signedIn identity) (seen ← seenCount) =>
+      chatStatusHandler store assistant a seen),
+    .delete patterns.chat (extract (a ← signedIn identity) => chatResetHandler assistant a)
+  ] ++ oauth.map .route
 
 def app (assets : Assets) (identity : Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site)
     (oauth : List (Routing.Route Routing.Result) := [])
     (providers : List Authentication.ProviderConfig := []) : StatelessHandler :=
-  let byId (handler : Store → Account → Nat → Request Body.Stream →
-      ContextAsync (Response Body.Any)) := fun id =>
-    guarded identity (handler store · id ·)
-  let withParams (handler : Params → Request Body.Stream → ContextAsync (Response Body.Any)) :=
-    extract (params ← Extract.params) => handler params
-  toHandler ([
-    .get patterns.index (guarded identity (pageHandler assets .all store assistant identity)),
-    .get patterns.active (guarded identity (pageHandler assets .active store assistant identity)),
-    .get patterns.completed (guarded identity (pageHandler assets .completed store assistant identity)),
-    .post patterns.todos (guarded identity fun account => withParams (addHandler store account)),
-    .get patterns.todosStatus
-      (guarded identity fun account => withParams (listStatusHandler store account)),
-    .get patterns.edit (byId editHandler),
-    .put patterns.todo (fun id =>
-      guarded identity fun account => withParams (saveHandler store account id)),
-    .post patterns.toggle (byId toggleHandler),
-    .delete patterns.todo (byId deleteHandler),
-    .post patterns.toggleAll (guarded identity (toggleAllHandler store)),
-    .delete patterns.clearCompleted (guarded identity (clearCompletedHandler store)),
-    .post patterns.signOut (guarded identity (signOutHandler identity)),
-    .get patterns.account (guarded identity (accountHandler assets identity providers)),
-    .post patterns.accountUnlink
-      (guarded identity fun account => withParams (accountUnlinkHandler assets identity providers account)),
-    .get patterns.connect (guarded identity (connectHandler assets authorization)),
-    .post patterns.disconnect (guarded identity (disconnectHandler assets authorization)),
-    .post patterns.disconnectOne
-      (guarded identity fun account => withParams (disconnectOneHandler assets authorization account)),
-    .post patterns.chat
-      (guarded identity fun account => withParams (chatHandler store assistant account)),
-    .get patterns.chatStatus
-      (guarded identity fun account => withParams (chatStatusHandler store assistant account)),
-    .delete patterns.chat (guarded identity (chatResetHandler assistant))
-  ] ++ oauth)
+  ({ routes := appRoutes assets identity store assistant authorization oauth providers } : Router)
+    |>.toHandler
 
-/-- The sign-in routes carry an anti-forgery token of their own, derived from the attempt cookie
-under the server's pepper, and the browser reaching them has no session for `antiForgery` to have
-put one in. So they are served beside the application rather than inside it, and everything the
-two do share is applied to both.
-
-The tenant's own prefix decides which is which, because that is where the library answers and
-where the mail it sends points. -/
-private def underAuth (req : Request Body.Stream) : Bool :=
-  match req.line.uri.path.toDecodedSegments.toList with
-  | "t" :: name :: _ => name == Todo.tenant.value
-  | _ => false
-
-/-- The endpoints a client reaches rather than a browser, served beside the application for the
-reason the sign-in routes are: they answer requests that carry no session, and `antiForgery`
-refuses those. The resource's own metadata document is here because it answers with no session
-either, and everything inside the application redirects a request without one to the sign-in
-page.
-
-Which of the authorisation server's own paths belong here is not this predicate's judgement:
-`OAuth.Http.Routes` answers it as two lists, and these are the paths its `client` half carries.
-The authorization endpoint is in the other half, and stays inside, because a person answers it. -/
-private def underClient (req : Request Body.Stream) : Bool :=
-  match req.line.uri.path.toDecodedSegments.toList with
-  | ["mcp"] | ["oauth", "token"] | ["oauth", "register"] => true
-  | [".well-known", "oauth-authorization-server"] => true
-  | [".well-known", "oauth-protected-resource"] => true
-  | [".well-known", "oauth-protected-resource", "mcp"] => true
-  | _ => false
-
-private def split (auth client application : StatelessHandler) : StatelessHandler :=
-  { onRequest := fun req =>
-      if underAuth req then auth.onRequest req
-      else if underClient req then client.onRequest req
-      else application.onRequest req }
+/-- Where the sign-in routes answer, which is also where the mail they send points. -/
+private def tenantRoot : MountPoint := .mk ["t", Todo.tenant.value]
 
 /-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
 `Middleware.apply`'s documented order.
@@ -589,6 +561,13 @@ the browser stops asking and `notModified` is never reached, which is how a rede
 stylesheet went on being ignored. `file` stays inside for the unfingerprinted paths, which older
 pages still name.
 
+Only the application's own routes are behind `antiForgery`. The sign-in routes carry an
+anti-forgery token of their own, derived from the attempt cookie under the server's pepper, and the
+browser reaching them has no session for `antiForgery` to have put one in. `auth` takes everything
+under the tenant's prefix, its misses included, since the library answers those with a page of its
+own. The endpoints a client reaches carry no session either: an agent holds a token rather than a
+cookie, and the resource's metadata document answers anybody.
+
 `oauth` is the authorisation server's own endpoints, already split by the library into the half a
 person answers and the half a client does. The halves land on opposite sides of `antiForgery`,
 which is the whole reason they arrive as two lists: one wrapper over both would leave either a
@@ -598,36 +577,40 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity) (auth : Sta
     (oauth : Authentication.OAuth.Http.Routes := { browser := [], client := [] })
     (providers : List Authentication.ProviderConfig := [])
     (https : Bool := false) : StatelessHandler :=
-  let client := toHandler
-    ([ .post patterns.mcp (mcpHandler store authorization),
-       .get patterns.mcp (mcpHandler store authorization),
-       .delete patterns.mcp (mcpHandler store authorization),
-       .get patterns.mcpMetadata (resourceMetadataHandler authorization),
-       -- RFC 9728 §3 puts the resource's own path into the well-known URL, and that is the form a
-       -- client tries first. Both are served because a client that tried only the shorter one
-       -- would otherwise have nothing to read.
-       .get patterns.mcpMetadataForEndpoint (resourceMetadataHandler authorization) ]
-      ++ oauth.client)
-  Middleware.apply
-    ([forwardedScheme, forwardedRemoteAddr]
-      ++ (if https then [hsts] else [])
-      ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
-          catchAll,
-          serverSpan matchedPattern?,
-          cookies,
-          session sessions
-            { cookieName := "todomvc-session",
-              cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
-                               secure := https } },
-          params,
-          contentType,
-          defaultCharset,
-          cacheControl .noCache,
-          notModified,
-          Middleware.assets assets.served,
-          file "public"])
-    (split auth client
-      (Middleware.apply [antiForgery]
-        (app assets identity store assistant authorization oauth.browser providers)))
+  let client : List Entry :=
+    [ .post patterns.mcp (mcpHandler store authorization),
+      .get patterns.mcp (mcpHandler store authorization),
+      .delete patterns.mcp (mcpHandler store authorization),
+      .get patterns.mcpMetadata (resourceMetadataHandler authorization),
+      -- RFC 9728 §3 puts the resource's own path into the well-known URL, and that is the form a
+      -- client tries first. Both are served because a client that tried only the shorter one
+      -- would otherwise have nothing to read.
+      .get patterns.mcpMetadataForEndpoint (resourceMetadataHandler authorization) ]
+    ++ oauth.client.map .route
+  let root : Router :=
+    { middlewares := [forwardedScheme, forwardedRemoteAddr]
+        ++ (if https then [hsts] else [])
+        ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
+            catchAll,
+            serverSpan matchedPattern?,
+            cookies,
+            session sessions
+              { cookieName := "todomvc-session",
+                cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
+                                 secure := https } },
+            params,
+            contentType,
+            defaultCharset,
+            cacheControl .noCache,
+            notModified,
+            Middleware.assets assets.served,
+            file "public"],
+      routers := [
+        { routes := [.mount tenantRoot []], fallback := some auth },
+        { routes := client },
+        { middlewares := [antiForgery],
+          routes := appRoutes assets identity store assistant authorization oauth.browser
+            providers } ] }
+  root.toHandler
 
 end Todo
