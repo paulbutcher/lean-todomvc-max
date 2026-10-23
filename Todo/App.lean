@@ -566,10 +566,11 @@ the freshness headers, so a `Set-Cookie` written inside it would never reach the
 
 Only the application's own routes are behind `antiForgery`. The sign-in routes carry an
 anti-forgery token of their own, derived from the attempt cookie under the server's pepper, and the
-browser reaching them has no session for `antiForgery` to have put one in. `auth` takes everything
-under the tenant's prefix, its misses included, since the library answers those with a page of its
-own. The endpoints a client reaches have no session at all: an agent holds a token rather than a
-cookie, and the resource's metadata document answers anybody.
+browser reaching them has no session for `antiForgery` to have put one in. They read and write
+their own cookies, so they have no `session` either. `auth` takes everything under the tenant's
+prefix, its misses included, since the library answers those with a page of its own. The endpoints
+a client reaches have no session at all: an agent holds a token rather than a cookie, and the
+resource's metadata document answers anybody.
 
 `oauth` is the authorisation server's own endpoints, already split by the library into the half a
 person answers and the half a client does. The halves land on opposite sides of `antiForgery`,
@@ -604,8 +605,7 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity) (auth : Sta
             catchAll,
             serverSpan matchedPattern?],
       routers := [
-        { middlewares := browser ++ content, routes := [.mount tenantRoot []],
-          fallback := some auth },
+        { middlewares := content, routes := [.mount tenantRoot []], fallback := some auth },
         { middlewares := content, routes := client },
         { middlewares := browser ++ content ++ [antiForgery],
           routes := appRoutes assets identity store assistant authorization oauth.browser

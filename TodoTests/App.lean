@@ -161,6 +161,19 @@ private def testSignInRoutesAreServedOutsideAntiForgery : IO Unit := do
   check "POST /todos with no token" (mkPost "/todos" "title=x" "Connection: close\x0d\n") handler
     fun response => assertStatus response "HTTP/1.1 403"
 
+/-- Everything under the tenant's prefix is the sign-in library's to answer, a path naming none of
+its routes included, because the page it answers that with is its own rather than a bare 404. -/
+private def testMissesUnderTheTenantGoToTheSignInRoutes : IO Unit := do
+  let store ← memoryStore alice #[]
+  let sessions ← Middleware.MemoryStore.new
+  let auth : Std.Http.Server.StatelessHandler :=
+    { onRequest := fun _ => Std.Http.Response.ok.html "the sign-in routes answered" }
+  let handler :=
+    (Todo.server testAssets anonymousIdentity auth store (← scriptedAssistant #[]) sessions
+      noGrants).onRequest
+  check "GET /t/todomvc/nowhere" (mkGetClose "/t/todomvc/nowhere") handler
+    fun response => assertContains response "the sign-in routes answered"
+
 /-- What somebody is handed to set up an agent of their own has to name the address that agent
 will be challenged toward. The page says it in prose and the discovery document says it to a
 machine; a person told a different one would set their agent up against nothing. -/
@@ -273,6 +286,7 @@ def runAppTests : IO Unit :=
     testSignOutRevokesAndClearsTheCookie
     testTlsProfileGatesCookieAndHsts
     testSignInRoutesAreServedOutsideAntiForgery
+    testMissesUnderTheTenantGoToTheSignInRoutes
     testTheConnectPageNamesTheEndpointAnAgentReaches
     testTheConnectPageExplainsEveryScopeOnOffer
     testTheConnectPageServesWhatMakesTheCopyButtonWork
