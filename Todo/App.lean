@@ -558,14 +558,17 @@ listener to redirect a caller away from.
 the only reason a far-future policy on those paths is safe. `cacheControl` covers everything
 else: a response carrying validators and no freshness directive falls to heuristic freshness, so
 the browser stops asking and `notModified` is never reached, which is how a redeployed
-stylesheet went on being ignored. `file` stays inside for the unfingerprinted paths, which older
-pages still name.
+stylesheet went on being ignored. `file` serves the unfingerprinted paths, which older pages still
+name. Both answer whatever no route takes, with no session, since a stylesheet has no use for one.
+
+`cookies` and `session` sit outside `notModified`, because a `304` keeps only the validators and
+the freshness headers, so a `Set-Cookie` written inside it would never reach the browser.
 
 Only the application's own routes are behind `antiForgery`. The sign-in routes carry an
 anti-forgery token of their own, derived from the attempt cookie under the server's pepper, and the
 browser reaching them has no session for `antiForgery` to have put one in. `auth` takes everything
 under the tenant's prefix, its misses included, since the library answers those with a page of its
-own. The endpoints a client reaches carry no session either: an agent holds a token rather than a
+own. The endpoints a client reaches have no session at all: an agent holds a token rather than a
 cookie, and the resource's metadata document answers anybody.
 
 `oauth` is the authorisation server's own endpoints, already split by the library into the half a
@@ -587,30 +590,28 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity) (auth : Sta
       -- would otherwise have nothing to read.
       .get patterns.mcpMetadataForEndpoint (resourceMetadataHandler authorization) ]
     ++ oauth.client.map .route
+  let browser :=
+    [cookies,
+     session sessions
+       { cookieName := "todomvc-session",
+         cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
+                          secure := https } }]
+  let content := [params, contentType, defaultCharset, cacheControl .noCache, notModified]
   let root : Router :=
     { middlewares := [forwardedScheme, forwardedRemoteAddr]
         ++ (if https then [hsts] else [])
         ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
             catchAll,
-            serverSpan matchedPattern?,
-            cookies,
-            session sessions
-              { cookieName := "todomvc-session",
-                cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
-                                 secure := https } },
-            params,
-            contentType,
-            defaultCharset,
-            cacheControl .noCache,
-            notModified,
-            Middleware.assets assets.served,
-            file "public"],
+            serverSpan matchedPattern?],
       routers := [
-        { routes := [.mount tenantRoot []], fallback := some auth },
-        { routes := client },
-        { middlewares := [antiForgery],
+        { middlewares := browser ++ content, routes := [.mount tenantRoot []],
+          fallback := some auth },
+        { middlewares := content, routes := client },
+        { middlewares := browser ++ content ++ [antiForgery],
           routes := appRoutes assets identity store assistant authorization oauth.browser
-            providers } ] }
+            providers } ],
+      fallback := some (Middleware.apply
+        (content ++ [Middleware.assets assets.served, file "public"]) (toHandler [])) }
   root.toHandler
 
 end Todo
