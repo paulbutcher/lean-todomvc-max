@@ -86,7 +86,7 @@ def main : IO Unit := Async.block do
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
     let server ← serve addr
       (Todo.server assets site.identity site.handler (Todo.Db.store pool) assistant sessions
-        site.authorization (Authentication.OAuth.Http.routes site.oauth) site.config.providers)
+        site.authorization site.oauth site.config.providers)
     IO.println s!"Listening on http://localhost:{port}"
     IO.println s!"MCP endpoint at http://localhost:{port}/mcp"
     server.waitShutdown

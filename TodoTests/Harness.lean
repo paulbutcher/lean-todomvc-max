@@ -187,14 +187,14 @@ def holdingConnections (live : IO.Ref (List Authorization.Connection))
         live.set []
         pure held.length }
 
-/-- The authorisation server's own endpoints, on a database of their own.
+/-- The configuration of the authorisation server's own endpoints, on a database of their own.
 
 Real rather than scripted, because they are the library's routes now and there is nothing left
 here to stand in for them. What is still worth testing through them is this application's own
 wiring: that the documents a client discovers name this deployment's endpoints, and that a
 request reaching them is not turned away by the middleware the browser routes sit behind. -/
-def oauthRoutesOn (base : Authentication.BaseUrl := testBase) :
-    IO Authentication.OAuth.Http.Routes := do
+def oauthOn (base : Authentication.BaseUrl := testBase) :
+    IO (Authentication.OAuth.Http.Config (.origin Todo.tenant)) := do
   let db ← Authentication.Sqlite.openInMemory
   db.exec Authentication.OAuth.sqliteSchemaSql
   let settings : Todo.Auth.Settings :=
@@ -202,20 +202,19 @@ def oauthRoutesOn (base : Authentication.BaseUrl := testBase) :
       baseUrl := base
       senderAddress := ⟨"no-reply", ⟨["todos", "example"]⟩⟩
       transport := Authentication.EmailTransport.console }
-  pure (Authentication.OAuth.Http.routes
+  pure
     { ports :=
         { store := Authentication.Sqlite.store db
           oauth := Authentication.OAuth.sqlOAuthStore Authentication.Sqlite.dialect
             (Authentication.Sqlite.connection db)
           peppers := { current := settings.pepper } }
       pages := Todo.oauthPages testAssets
-      mountedAt := .origin Todo.tenant
       defaultScopes := some Todo.Authorization.scopes
       tenant := fun t =>
         pure (if t == Todo.tenant then some (Todo.Auth.tenantConfig settings t) else none)
       oauth := fun t =>
         if h : t = Todo.tenant then pure (some (h ▸ Todo.Authorization.config base))
-        else pure none })
+        else pure none }
 
 /-- An authorization server nobody holds a token for, for the routes that have nothing to do with
 one. Every request it sees is refused exactly as a real one refuses a client it has never heard
@@ -292,7 +291,7 @@ def browserOn (identity : Auth.Identity) (store : Store) (assistant : Assistant)
   let signIn : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.notFound.text "no sign-in here" }
   let handler :=
-    (Todo.server testAssets identity signIn store assistant sessions authorization).onRequest
+    (Todo.server testAssets identity signIn store assistant sessions authorization (← oauthOn)).onRequest
   Middleware.Test.Browser.new handler (tokenFrom := pageToken)
 
 def browserFor (store : Store) (authorization : Authorization.Site := noGrants)

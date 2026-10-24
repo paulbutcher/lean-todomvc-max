@@ -118,7 +118,7 @@ private def serverOf (https : Bool) : IO TestHandler := do
   let auth : Std.Http.Server.StatelessHandler :=
     { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
   pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) auth store (← scriptedAssistant #[])
-    sessions noGrants (https := https)).onRequest
+    sessions noGrants (← oauthOn) (https := https)).onRequest
 
 /-- Only a deployment with something terminating TLS in front of it may mark the session cookie
 `secure` or claim `hsts`. The permissive direction is the harmful one: a `secure` cookie sent over
@@ -143,7 +143,7 @@ private def testSignInRoutesAreServedOutsideAntiForgery : IO Unit := do
     { onRequest := fun _ => Std.Http.Response.ok.html "the sign-in routes answered" }
   let handler :=
     (Todo.server testAssets anonymousIdentity auth store (← scriptedAssistant #[]) sessions
-      noGrants).onRequest
+      noGrants (← oauthOn)).onRequest
   check "POST /t/todomvc/signin with no token"
     (mkPost "/t/todomvc/signin" "email=someone@example.com" "Connection: close\x0d\n") handler
     fun response => do
@@ -160,7 +160,7 @@ private def testMissesUnderTheTenantGoToTheSignInRoutes : IO Unit := do
     { onRequest := fun _ => Std.Http.Response.ok.html "the sign-in routes answered" }
   let handler :=
     (Todo.server testAssets anonymousIdentity auth store (← scriptedAssistant #[]) sessions
-      noGrants).onRequest
+      noGrants (← oauthOn)).onRequest
   check "GET /t/todomvc/nowhere" (mkGetClose "/t/todomvc/nowhere") handler
     fun response => assertContains response "the sign-in routes answered"
 

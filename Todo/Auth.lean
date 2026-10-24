@@ -179,30 +179,22 @@ nothing, and it puts the metadata document where every client looks first.
 deployment. Everything on offer, because agents that name no scopes are common rather than odd
 and the alternative is refusing them all; the page still asks, and a box left unticked is a scope
 withheld. -/
-def oauth (s : Site) : Authentication.OAuth.Http.Config where
+def oauth (s : Site) : Authentication.OAuth.Http.Config (.origin Todo.tenant) where
   ports := s.oauthPorts
   pages := Todo.oauthPages s.assets
-  mountedAt := .origin Todo.tenant
   defaultScopes := some Todo.Authorization.scopes
   tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
   oauth := fun t =>
     if h : t = Todo.tenant then pure (some (h ▸ Todo.Authorization.config s.settings.baseUrl))
     else pure none
 
-/-- The federated sign-in routes, empty where no provider is configured. The library refuses a
-provider the tenant does not name, so mounting them regardless would answer the same way; this
-keeps a deployment that offers none from carrying routes for them at all. -/
-def federatedRoutes (s : Site) : List (Routing.Route Routing.Result) :=
-  match s.oidc with
-  | none => []
-  | some oidc =>
-    Authentication.OidcHttp.routes
-      { ports := s.ports
-        oidc
-        tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
-        refusedPage := Todo.federationRefusedPage s.assets
-        observeRefusal
-        notFoundPage := Todo.notFoundPage s.assets }
+def federated (s : Site) (oidc : Oidc.SignInPorts IO) : Authentication.OidcHttp.Config :=
+  { ports := s.ports
+    oidc
+    tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
+    refusedPage := Todo.federationRefusedPage s.assets
+    observeRefusal
+    notFoundPage := Todo.notFoundPage s.assets }
 
 end Site
 
@@ -282,9 +274,19 @@ second would never be reached.
 
 The fallback is the federated routes' page rather than the magic link's `unknown`, which is about
 a link that has been used or has expired and would describe the wrong thing for a path that names
-no route at all. -/
+no route at all.
+
+The federated routes are left out where no provider is configured. The library refuses a provider
+the tenant does not name, so mounting them regardless would answer the same way; this keeps a
+deployment that offers none from carrying routes for them at all. The match is outside
+`toHandler` so that each table it checks is known at compile time. -/
 def Site.handler (s : Site) : StatelessHandler :=
-  Routing.toHandler (Authentication.Http.routes s.http ++ s.federatedRoutes)
-    (fun _ => Response.notFound.html (Todo.notFoundPage s.assets))
+  let notFound : Routing.Result := fun _ => Response.notFound.html (Todo.notFoundPage s.assets)
+  match s.oidc with
+  | none => Routing.toHandler (Authentication.Http.routes s.http) notFound
+  | some oidc =>
+    Routing.toHandler
+      (Authentication.Http.routes s.http ++ Authentication.OidcHttp.routes (s.federated oidc))
+      notFound
 
 end Todo.Auth
