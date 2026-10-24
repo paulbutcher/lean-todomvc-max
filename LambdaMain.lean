@@ -178,4 +178,4 @@ def main : IO Unit := AwsLambda.serve do
   pure (AwsLambda.Http.handler
     (Todo.server assets site.identity site.http (Todo.Db.store pool) assistant sessions
       site.authorization site.oauth site.federated site.config.providers
-      (https := true)))
+      (https := true)).toStd)

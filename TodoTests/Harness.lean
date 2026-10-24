@@ -304,7 +304,7 @@ terminates it; the second is what `Browser` reads by default. -/
 def pageToken (body : String) : Option String :=
   (Middleware.Test.tokenBetween "X-CSRF-Token&quot;: &quot;" "&quot;" body).orElse fun _ =>
     Middleware.Test.tokenAfter
-      s!"name=\"{({} : Middleware.AntiForgeryOptions).paramName}\" value=\"" body
+      s!"name=\"{Middleware.defaultAntiForgeryParamName}\" value=\"" body
 
 /-- A browser against the whole stack, for the tests that are about what a browser can do: fetch
 a page, then post the form on it. Driving less than this passes whether or not the page renders
