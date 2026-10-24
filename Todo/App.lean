@@ -7,7 +7,7 @@ module
 
 public import Std.Http.Server
 public import Html
-public import Routing
+public import RoutingStd
 public import Middleware
 public import MiddlewareTracing
 public import Todo.Auth
@@ -129,7 +129,7 @@ def editHandler (store : Store) (account : Account) (id : Nat) (req : Request Bo
 
 /-- How many of the turn's mutations the fragment that sent this poll was drawn against. Missing
 or unreadable reads as none, which costs a redundant refresh rather than a missed one. -/
-def seenCount : Extractor Nat := (fun seen => (seen.bind (·.toNat?)).getD 0) <$> Extract.field? "seen"
+def seenCount : Extractor .std Nat := (fun seen => (seen.bind (·.toNat?)).getD 0) <$> Extract.field? "seen"
 
 def addHandler (store : Store) (account : Account) (title : String)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
@@ -163,7 +163,7 @@ def clearCompletedHandler (store : Store) (account : Account) (req : Request Bod
 
 /-- The digest the fragment that sent this poll was drawn against. Missing or unreadable matches
 no list, which costs a redundant refresh rather than a missed one. -/
-def seenDigest : Extractor String := (·.getD "") <$> Extract.field? "seen"
+def seenDigest : Extractor .std String := (·.getD "") <$> Extract.field? "seen"
 
 /-- Answers the page's standing question of whether the list it is showing is still the list the
 store holds, and says nothing at all when it is.
@@ -316,7 +316,7 @@ def signOutHandler (identity : Identity) (account : Account) (req : Request Body
 
 /-! ## The assistant panel -/
 
-def prompt : Extractor (Option String) :=
+def prompt : Extractor .std (Option String) :=
   (fun raw => raw.map (·.trimAscii.toString) |>.filter (!·.isEmpty)) <$> Extract.field? "prompt"
 
 /-- The panel's transcript, which is what every route below answers with: each of them changes
@@ -482,7 +482,7 @@ def mcpHandler (store : Store) (site : Authorization.Site) (req : Request Body.S
 
 /-- Who is asking. Every application route needs to know, so establishing it is the router's job
 rather than each handler's, and a request with no live session never reaches one. -/
-private def signedIn (identity : Identity) : Extractor Account := do
+private def signedIn (identity : Identity) : Extractor .std Account := do
   let req ← read
   match ← (identity.of req : IO _) with
   | some account => pure account
@@ -492,8 +492,8 @@ private def signedIn (identity : Identity) : Extractor Account := do
 with no session is sent to sign in rather than refused for a field it could not have filled. -/
 private def appRoutes (assets : Assets) (identity : Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site)
-    (oauth : List (Routing.Route Routing.Result) := [])
-    (providers : List Authentication.ProviderConfig := []) : List Entry :=
+    (oauth : List (Routing.Route (Routing.Result .std)) := [])
+    (providers : List Authentication.ProviderConfig := []) : List (Entry .std) :=
   let page (filter : Filter) := extract (a ← signedIn identity) =>
     pageHandler assets filter store assistant identity a
   let byId (handler : Store → Account → Nat → Request Body.Stream →
@@ -584,9 +584,9 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity)
     (oauth : Authentication.OAuth.Http.Config (.origin Todo.tenant))
     (federated : Option Authentication.OidcHttp.Config := none)
     (providers : List Authentication.ProviderConfig := [])
-    (https : Bool := false) : StatelessHandler :=
+    (https : Bool := false) : StatelessHandler .std :=
   let oauth := Authentication.OAuth.Http.routes oauth
-  let client : List Entry :=
+  let client : List (Entry .std) :=
     [ .post patterns.mcp (mcpHandler store authorization),
       .get patterns.mcp (mcpHandler store authorization),
       .delete patterns.mcp (mcpHandler store authorization),
@@ -603,8 +603,8 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity)
          cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
                           secure := https } }]
   let content := [params, contentType, defaultCharset, cacheControl .noCache, notModified]
-  let notFound : Result := fun _ => Response.notFound.html (Todo.notFoundPage assets)
-  let root (signInRoutes : List (Route Result)) : Router :=
+  let notFound : Result .std := fun _ => Response.notFound.html (Todo.notFoundPage assets)
+  let root (signInRoutes : List (Route (Result .std))) : Router .std :=
     { middlewares := [forwardedScheme, forwardedRemoteAddr]
         ++ (if https then [hsts] else [])
         ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
@@ -612,7 +612,7 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity)
             serverSpan matchedPattern?],
       routers := [
         { middlewares := content, routes := signInRoutes.map .route ++ [.mount tenantRoot []],
-          fallback := some (Handler.ofFn notFound) },
+          fallback := some (StatelessHandler.ofFn notFound) },
         { middlewares := content, routes := client },
         { middlewares := browser ++ content ++ [antiForgery],
           routes := appRoutes assets identity store assistant authorization oauth.browser

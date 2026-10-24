@@ -58,6 +58,12 @@ git = "https://github.com/paulbutcher/lean-routing"
 rev = "v0.15.0"
 
 [[require]]
+name = "routing-std"
+git = "https://github.com/paulbutcher/lean-routing"
+rev = "v0.15.0"
+subDir = "std"
+
+[[require]]
 name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
 rev = "v0.18.0"

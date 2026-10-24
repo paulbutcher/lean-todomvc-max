@@ -68,7 +68,7 @@ private def connectForm (provider : Authentication.ProviderConfig) :
 private def disconnectForm (provider : Authentication.ProviderConfig)
     (credential : Authentication.CredentialId Todo.tenant) (token : Option String) : Node .flow :=
   form
-    (hidden ({} : Middleware.AntiForgeryOptions).paramName token ++ hidden "credential" (some credential.value)
+    (hidden Middleware.defaultAntiForgeryParamName token ++ hidden "credential" (some credential.value)
       ++ [(button [s!"Disconnect {Todo.Federation.label provider.id}"] { class_ := "quiet" }
             : Node .flow)])
     { method := "post", action := links.accountUnlink }

@@ -70,7 +70,7 @@ private def connectionRow (token : Option String)
       ul (connection.scopes.map scopeLine),
       p [s!"Last used {AuthMail.inWords connection.lastUsedAt}."] { class_ := "note" },
       form
-        (Todo.hidden ({} : Middleware.AntiForgeryOptions).paramName token
+        (Todo.hidden Middleware.defaultAntiForgeryParamName token
           -- Both halves, because a grant is one client's at one resource and either alone would
           -- name more than the row the button sits under.
           ++ Todo.hidden "client" (some connection.client.value)
@@ -105,7 +105,7 @@ private def disconnectSection (token : Option String) : Node .flow :=
           approval that no longer works, and nothing it does on its own will recover. Withdraw \
           them all and each one asks again the next time you use it."],
       form
-        (Todo.hidden ({} : Middleware.AntiForgeryOptions).paramName token
+        (Todo.hidden Middleware.defaultAntiForgeryParamName token
           ++ [(button ["Disconnect every assistant"] : Node .flow)])
         { method := "post", action := links.disconnect } ]
     { class_ := "withdraw" }
