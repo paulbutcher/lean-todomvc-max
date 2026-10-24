@@ -55,7 +55,7 @@ rev = "v0.6.2"
 [[require]]
 name = "routing"
 git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.11.0"
+rev = "v0.12.0"
 
 [[require]]
 name = "middleware"
@@ -65,7 +65,7 @@ rev = "v0.17.1"
 [[require]]
 name = "authentication"
 git = "https://github.com/paulbutcher/lean-authentication"
-rev = "v0.17.1"
+rev = "v0.19.0"
 
 [[require]]
 name = "leanmigratePostgres"
