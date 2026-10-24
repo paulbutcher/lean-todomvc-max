@@ -55,7 +55,7 @@ rev = "v0.6.2"
 [[require]]
 name = "routing"
 git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.12.0"
+rev = "v0.13.1"
 
 [[require]]
 name = "middleware"
