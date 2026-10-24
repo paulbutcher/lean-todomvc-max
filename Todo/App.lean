@@ -560,20 +560,29 @@ the freshness headers, so a `Set-Cookie` written inside it would never reach the
 Only the application's own routes are behind `antiForgery`. The sign-in routes carry an
 anti-forgery token of their own, derived from the attempt cookie under the server's pepper, and the
 browser reaching them has no session for `antiForgery` to have put one in. They read and write
-their own cookies, so they have no `session` either. `auth` takes everything under the tenant's
-prefix, its misses included, since the library answers those with a page of its own. The endpoints
+their own cookies, so they have no `session` either. Their router takes everything under the
+tenant's prefix, and answers a path naming none of its routes with the not-found page rather than
+the magic link's `unknown`, which is about a link that has been used or has expired. The endpoints
 a client reaches have no session at all: an agent holds a token rather than a cookie, and the
 resource's metadata document answers anybody.
+
+`federated` is the federated sign-in routes' configuration, `none` where no provider is
+configured. The library refuses a provider the tenant does not name, so mounting them regardless
+would answer the same way; this keeps a deployment that offers none from carrying routes for them.
 
 `oauth` configures the authorisation server's own endpoints, whose routes the library splits into
 the half a person answers and the half a client does. The halves land on opposite sides of
 `antiForgery`, which is the whole reason they arrive as two lists: one wrapper over both would
 leave either a consent form that cannot be posted or a token endpoint that refuses every client.
-It is the configuration rather than the routes so that their patterns, and so the whole table, are
-known here for `toHandler` to check for shadowing. -/
-def server [SessionStore σ] (assets : Assets) (identity : Identity) (auth : StatelessHandler)
-    (store : Store) (assistant : Assistant) (sessions : σ) (authorization : Authorization.Site)
+
+Every library's routes arrive as configuration rather than as routes or a handler, so that their
+patterns, and so the whole table, are known here for `toHandler` to check for shadowing. For the
+same reason the match on `federated` is outside the table rather than inside it. -/
+def server [SessionStore σ] (assets : Assets) (identity : Identity)
+    (signIn : Authentication.Http.Config) (store : Store) (assistant : Assistant) (sessions : σ)
+    (authorization : Authorization.Site)
     (oauth : Authentication.OAuth.Http.Config (.origin Todo.tenant))
+    (federated : Option Authentication.OidcHttp.Config := none)
     (providers : List Authentication.ProviderConfig := [])
     (https : Bool := false) : StatelessHandler :=
   let oauth := Authentication.OAuth.Http.routes oauth
@@ -594,20 +603,25 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity) (auth : Sta
          cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
                           secure := https } }]
   let content := [params, contentType, defaultCharset, cacheControl .noCache, notModified]
-  let root : Router :=
+  let notFound : Result := fun _ => Response.notFound.html (Todo.notFoundPage assets)
+  let root (signInRoutes : List (Route Result)) : Router :=
     { middlewares := [forwardedScheme, forwardedRemoteAddr]
         ++ (if https then [hsts] else [])
         ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
             catchAll,
             serverSpan matchedPattern?],
       routers := [
-        { middlewares := content, routes := [.mount tenantRoot []], fallback := some auth },
+        { middlewares := content, routes := signInRoutes.map .route ++ [.mount tenantRoot []],
+          fallback := some (Handler.ofFn notFound) },
         { middlewares := content, routes := client },
         { middlewares := browser ++ content ++ [antiForgery],
           routes := appRoutes assets identity store assistant authorization oauth.browser
             providers } ],
       fallback := some (Middleware.apply
         (content ++ [Middleware.assets assets.served, file "public"]) (toHandler [])) }
-  root.toHandler
+  match federated with
+  | none => (root (Authentication.Http.routes signIn)).toHandler
+  | some federated =>
+    (root (Authentication.Http.routes signIn ++ Authentication.OidcHttp.routes federated)).toHandler
 
 end Todo

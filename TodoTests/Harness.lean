@@ -187,6 +187,34 @@ def holdingConnections (live : IO.Ref (List Authorization.Connection))
         live.set []
         pure held.length }
 
+/-- Mail is dropped rather than printed: what a test needs from a sign-in is the response. -/
+def testSettings (base : Authentication.BaseUrl := testBase) : Todo.Auth.Settings :=
+  { pepper := { keyId := ⟨"test"⟩, secret := "todomvc-test-pepper".toUTF8 }
+    baseUrl := base
+    senderAddress := ⟨"no-reply", ⟨["todos", "example"]⟩⟩
+    transport := Authentication.EmailTransport.capturing fun _ => pure () }
+
+/-- A database for `signInOn`, which takes it rather than opening its own because the
+configuration is too large a type for `IO` to return. -/
+def signInDb : IO SQLite := Authentication.Sqlite.openInMemory
+
+/-- The sign-in routes' configuration over `db`, with nothing slowing or limiting a request: what
+these tests drive is this application's wiring, not the library. -/
+def signInOn (db : SQLite) (base : Authentication.BaseUrl := testBase) :
+    Authentication.Http.Config :=
+  let settings := testSettings base
+  { ports :=
+      { store := Authentication.Sqlite.store db
+        transport := settings.transport
+        responsePolicy := Todo.Auth.responsePolicy
+        limiter := Authentication.RateLimiter.unlimited IO
+        responseFloor := Authentication.ResponseFloor.immediate IO
+        humanCheck := Authentication.HumanCheck.unchecked IO
+        peppers := { current := settings.pepper } }
+    pages := Todo.pages testAssets []
+    tenant := fun t =>
+      pure (if t == Todo.tenant then some (Todo.Auth.tenantConfig settings t) else none) }
+
 /-- The configuration of the authorisation server's own endpoints, on a database of their own.
 
 Real rather than scripted, because they are the library's routes now and there is nothing left
@@ -197,11 +225,7 @@ def oauthOn (base : Authentication.BaseUrl := testBase) :
     IO (Authentication.OAuth.Http.Config (.origin Todo.tenant)) := do
   let db ← Authentication.Sqlite.openInMemory
   db.exec Authentication.OAuth.sqliteSchemaSql
-  let settings : Todo.Auth.Settings :=
-    { pepper := { keyId := ⟨"test"⟩, secret := "todomvc-test-pepper".toUTF8 }
-      baseUrl := base
-      senderAddress := ⟨"no-reply", ⟨["todos", "example"]⟩⟩
-      transport := Authentication.EmailTransport.console }
+  let settings := testSettings base
   pure
     { ports :=
         { store := Authentication.Sqlite.store db
@@ -288,10 +312,10 @@ a token at all, and so whether or not the form works. -/
 def browserOn (identity : Auth.Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site := noGrants) : IO Middleware.Test.Browser := do
   let sessions ← Middleware.MemoryStore.new
-  let signIn : Std.Http.Server.StatelessHandler :=
-    { onRequest := fun _ => Std.Http.Response.notFound.text "no sign-in here" }
   let handler :=
-    (Todo.server testAssets identity signIn store assistant sessions authorization (← oauthOn)).onRequest
+    (Todo.server testAssets identity (signInOn (← signInDb)) store assistant sessions
+      authorization
+      (← oauthOn)).onRequest
   Middleware.Test.Browser.new handler (tokenFrom := pageToken)
 
 def browserFor (store : Store) (authorization : Authorization.Site := noGrants)

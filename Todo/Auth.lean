@@ -188,13 +188,15 @@ def oauth (s : Site) : Authentication.OAuth.Http.Config (.origin Todo.tenant) wh
     if h : t = Todo.tenant then pure (some (h ▸ Todo.Authorization.config s.settings.baseUrl))
     else pure none
 
-def federated (s : Site) (oidc : Oidc.SignInPorts IO) : Authentication.OidcHttp.Config :=
-  { ports := s.ports
-    oidc
-    tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
-    refusedPage := Todo.federationRefusedPage s.assets
-    observeRefusal
-    notFoundPage := Todo.notFoundPage s.assets }
+/-- The federated sign-in routes' configuration, `none` where no provider is configured. -/
+def federated (s : Site) : Option Authentication.OidcHttp.Config :=
+  s.oidc.map fun oidc =>
+    { ports := s.ports
+      oidc
+      tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
+      refusedPage := Todo.federationRefusedPage s.assets
+      observeRefusal
+      notFoundPage := Todo.notFoundPage s.assets }
 
 end Site
 
@@ -267,26 +269,5 @@ started, on a send that looks no different from the ones that worked. -/
 def refreshing {α : Type} (fresh : IO α) (transport : α → EmailTransport IO) :
     EmailTransport IO where
   send mail := do (transport (← fresh)).send mail
-
-/-- Everything served under the tenant's own prefix, which is both libraries' routes over one
-router. Two handlers would not do: the prefix is what the application splits on, so whichever ran
-second would never be reached.
-
-The fallback is the federated routes' page rather than the magic link's `unknown`, which is about
-a link that has been used or has expired and would describe the wrong thing for a path that names
-no route at all.
-
-The federated routes are left out where no provider is configured. The library refuses a provider
-the tenant does not name, so mounting them regardless would answer the same way; this keeps a
-deployment that offers none from carrying routes for them at all. The match is outside
-`toHandler` so that each table it checks is known at compile time. -/
-def Site.handler (s : Site) : StatelessHandler :=
-  let notFound : Routing.Result := fun _ => Response.notFound.html (Todo.notFoundPage s.assets)
-  match s.oidc with
-  | none => Routing.toHandler (Authentication.Http.routes s.http) notFound
-  | some oidc =>
-    Routing.toHandler
-      (Authentication.Http.routes s.http ++ Authentication.OidcHttp.routes (s.federated oidc))
-      notFound
 
 end Todo.Auth

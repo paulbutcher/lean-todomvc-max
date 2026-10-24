@@ -115,10 +115,8 @@ private def testSignOutRevokesAndClearsTheCookie : IO Unit := do
 private def serverOf (https : Bool) : IO TestHandler := do
   let store ← memoryStore alice #[]
   let sessions ← Middleware.MemoryStore.new
-  let auth : Std.Http.Server.StatelessHandler :=
-    { onRequest := fun _ => Std.Http.Response.ok.html "sign in" }
-  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) auth store (← scriptedAssistant #[])
-    sessions noGrants (← oauthOn) (https := https)).onRequest
+  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) (signInOn (← signInDb)) store
+    (← scriptedAssistant #[]) sessions noGrants (← oauthOn) (https := https)).onRequest
 
 /-- Only a deployment with something terminating TLS in front of it may mark the session cookie
 `secure` or claim `hsts`. The permissive direction is the harmful one: a `secure` cookie sent over
@@ -135,34 +133,33 @@ private def testTlsProfileGatesCookieAndHsts : IO Unit := do
 
 /-- The sign-in routes carry an anti-forgery token of their own and the browser reaching them has
 no session for `antiForgery` to have put one in, so they are served outside it. A `POST` there
-that `antiForgery` would have refused has to arrive. -/
+that `antiForgery` would have refused has to arrive. Starting a sign-in is the one that checks no
+token at all, since it is where the attempt cookie the token derives from is issued. -/
 private def testSignInRoutesAreServedOutsideAntiForgery : IO Unit := do
   let store ← memoryStore alice #[]
   let sessions ← Middleware.MemoryStore.new
-  let auth : Std.Http.Server.StatelessHandler :=
-    { onRequest := fun _ => Std.Http.Response.ok.html "the sign-in routes answered" }
   let handler :=
-    (Todo.server testAssets anonymousIdentity auth store (← scriptedAssistant #[]) sessions
-      noGrants (← oauthOn)).onRequest
+    (Todo.server testAssets anonymousIdentity (signInOn (← signInDb)) store
+      (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
   check "POST /t/todomvc/signin with no token"
     (mkPost "/t/todomvc/signin" "email=someone@example.com" "Connection: close\x0d\n") handler
-    fun response => do
-      assertContains response "the sign-in routes answered"
+    fun response => assertStatus response "HTTP/1.1 200"
   check "POST /todos with no token" (mkPost "/todos" "title=x" "Connection: close\x0d\n") handler
     fun response => assertStatus response "HTTP/1.1 403"
 
-/-- Everything under the tenant's prefix is the sign-in library's to answer, a path naming none of
-its routes included, because the page it answers that with is its own rather than a bare 404. -/
-private def testMissesUnderTheTenantGoToTheSignInRoutes : IO Unit := do
+/-- Everything under the tenant's prefix belongs to the sign-in routes' router, a path naming none
+of its routes included, so it is answered with the not-found page rather than the bare 404 the
+static files give. -/
+private def testMissesUnderTheTenantGetTheNotFoundPage : IO Unit := do
   let store ← memoryStore alice #[]
   let sessions ← Middleware.MemoryStore.new
-  let auth : Std.Http.Server.StatelessHandler :=
-    { onRequest := fun _ => Std.Http.Response.ok.html "the sign-in routes answered" }
   let handler :=
-    (Todo.server testAssets anonymousIdentity auth store (← scriptedAssistant #[]) sessions
-      noGrants (← oauthOn)).onRequest
+    (Todo.server testAssets anonymousIdentity (signInOn (← signInDb)) store
+      (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
   check "GET /t/todomvc/nowhere" (mkGetClose "/t/todomvc/nowhere") handler
-    fun response => assertContains response "the sign-in routes answered"
+    fun response => do
+      assertStatus response "HTTP/1.1 404"
+      assertContains response "There is nothing at that address."
 
 /-- What somebody is handed to set up an agent of their own has to name the address that agent
 will be challenged toward. The page says it in prose and the discovery document says it to a
@@ -273,7 +270,7 @@ def runAppTests : IO Unit :=
     testSignOutRevokesAndClearsTheCookie
     testTlsProfileGatesCookieAndHsts
     testSignInRoutesAreServedOutsideAntiForgery
-    testMissesUnderTheTenantGoToTheSignInRoutes
+    testMissesUnderTheTenantGetTheNotFoundPage
     testTheConnectPageNamesTheEndpointAnAgentReaches
     testTheConnectPageExplainsEveryScopeOnOffer
     testTheConnectPageServesWhatMakesTheCopyButtonWork

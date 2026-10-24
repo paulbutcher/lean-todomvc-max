@@ -85,8 +85,8 @@ def main : IO Unit := Async.block do
       (← (federation.mapM Todo.Federation.ports : IO _))
     let addr := .v4 ⟨.ofParts 127 0 0 1, port⟩
     let server ← serve addr
-      (Todo.server assets site.identity site.handler (Todo.Db.store pool) assistant sessions
-        site.authorization site.oauth site.config.providers)
+      (Todo.server assets site.identity site.http (Todo.Db.store pool) assistant sessions
+        site.authorization site.oauth site.federated site.config.providers)
     IO.println s!"Listening on http://localhost:{port}"
     IO.println s!"MCP endpoint at http://localhost:{port}/mcp"
     server.waitShutdown
