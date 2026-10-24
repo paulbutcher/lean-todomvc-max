@@ -177,5 +177,5 @@ def main : IO Unit := AwsLambda.serve do
   -- A function URL is reachable over https only, so TLS termination is a given here.
   pure (AwsLambda.Http.handler
     (Todo.server assets site.identity site.handler (Todo.Db.store pool) assistant sessions
-      site.authorization (Authentication.OAuth.Http.routes site.oauth) site.config.providers
+      site.authorization site.oauth site.config.providers
       (https := true)))

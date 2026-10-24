@@ -101,7 +101,7 @@ private def siteOf (store : Store) (site : Authorization.Site := authorization) 
   let auth : StatelessHandler :=
     { onRequest := fun _ => "no sign-in here" |> Response.notFound.text }
   pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) auth store assistant sessions
-    site (← oauthRoutesOn)).onRequest
+    site (← oauthOn)).onRequest
 
 private def call (body : String) (credential : Option String := some s!"Bearer {fullAccess}") :
     String :=

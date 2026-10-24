@@ -565,15 +565,18 @@ prefix, its misses included, since the library answers those with a page of its 
 a client reaches have no session at all: an agent holds a token rather than a cookie, and the
 resource's metadata document answers anybody.
 
-`oauth` is the authorisation server's own endpoints, already split by the library into the half a
-person answers and the half a client does. The halves land on opposite sides of `antiForgery`,
-which is the whole reason they arrive as two lists: one wrapper over both would leave either a
-consent form that cannot be posted or a token endpoint that refuses every client. -/
+`oauth` configures the authorisation server's own endpoints, whose routes the library splits into
+the half a person answers and the half a client does. The halves land on opposite sides of
+`antiForgery`, which is the whole reason they arrive as two lists: one wrapper over both would
+leave either a consent form that cannot be posted or a token endpoint that refuses every client.
+It is the configuration rather than the routes so that their patterns, and so the whole table, are
+known here for `toHandler` to check for shadowing. -/
 def server [SessionStore σ] (assets : Assets) (identity : Identity) (auth : StatelessHandler)
     (store : Store) (assistant : Assistant) (sessions : σ) (authorization : Authorization.Site)
-    (oauth : Authentication.OAuth.Http.Routes := { browser := [], client := [] })
+    (oauth : Authentication.OAuth.Http.Config (.origin Todo.tenant))
     (providers : List Authentication.ProviderConfig := [])
     (https : Bool := false) : StatelessHandler :=
+  let oauth := Authentication.OAuth.Http.routes oauth
   let client : List Entry :=
     [ .post patterns.mcp (mcpHandler store authorization),
       .get patterns.mcp (mcpHandler store authorization),
