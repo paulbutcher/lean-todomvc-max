@@ -122,7 +122,8 @@ private def serverOf (https : Bool) : IO TestHandler := do
 `secure` or claim `hsts`. The permissive direction is the harmful one: a `secure` cookie sent over
 plain http never comes back, and `antiForgery` then rejects every mutation. -/
 private def testTlsProfileGatesCookieAndHsts : IO Unit := do
-  check "behind a TLS terminator" (mkGetClose "/") (← serverOf true)
+  check "behind a TLS terminator"
+    (mkGet "/" "X-Forwarded-Proto: https\x0d\nConnection: close\x0d\n") (← serverOf true)
     fun response => do
       assertContains response "Strict-Transport-Security"
       assertContains response "; Secure"

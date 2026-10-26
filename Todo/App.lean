@@ -536,32 +536,27 @@ private def appRoutes (assets : Assets) (identity : Identity) (store : Store) (a
 /-- Where the sign-in routes answer, which is also where the mail they send points. -/
 private def tenantRoot : MountPoint := .mk ["t", Todo.tenant.value]
 
-/-- The routes wrapped in the middleware stack recommended for a browser-facing site, in
-`Middleware.apply`'s documented order.
+/-- The routes wrapped in `middleware`'s site preset.
 
 `https` states whether something in front of this server terminates TLS, which is the only thing
-that can establish it: `Std.Http.Server` serves plain http either way. Setting it marks the
-session cookie `secure` and sends `hsts`. Claiming it falsely is the damaging direction, since a
-`secure` cookie would never come back and `antiForgery` would then reject every mutation.
-
-`sslRedirect` is absent whichever way `https` goes, because neither deployment has a plaintext
-listener to redirect a caller away from.
+that can establish it: `Std.Http.Server` serves plain http either way. Setting it selects
+`secureSiteDefaults`, which trusts that proxy's `X-Forwarded-*` headers, marks the session cookie
+`secure`, sends `hsts` and redirects plain http. Claiming it falsely is the damaging direction: with
+no proxy to say `https`, every request would be redirected.
 
 `assets` serves everything under `public` at a path carrying the digest of its content, and is
 the only reason a far-future policy on those paths is safe. `cacheControl` covers everything
 else: a response carrying validators and no freshness directive falls to heuristic freshness, so
 the browser stops asking and `notModified` is never reached, which is how a redeployed
 stylesheet went on being ignored. `file` serves the unfingerprinted paths, which older pages still
-name. Both answer whatever no route takes, with no session, since a stylesheet has no use for one.
+name. Both answer whatever no route takes.
 
-`cookies` and `session` sit outside `notModified`, because a `304` keeps only the validators and
-the freshness headers, so a `Set-Cookie` written inside it would never reach the browser.
-
-Only the application's own routes are behind `antiForgery`. The sign-in routes carry an
-anti-forgery token of their own, derived from the attempt cookie under the server's pepper, and the
-browser reaching them has no session for `antiForgery` to have put one in. They read and write
-their own cookies, so they have no `session` either. Their router takes everything under the
-tenant's prefix, and answers a path naming none of its routes with the not-found page rather than
+Only the application's own routes are behind `antiForgery`, so the preset's is turned off and
+applied to their router alone. That puts it inside `notModified`, whose `304` drops the session
+update carrying a newly issued token; it is safe only because no page carries a validator. The
+sign-in routes carry an anti-forgery token of their own, derived from the attempt cookie under the
+server's pepper, and the browser reaching them has no session token yet. Their router takes
+everything under the tenant's prefix, and answers a path naming none of its routes with the not-found page rather than
 the magic link's `unknown`, which is about a link that has been used or has expired. The endpoints
 a client reaches have no session at all: an agent holds a token rather than a cookie, and the
 resource's metadata document answers anybody.
@@ -596,29 +591,21 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity)
       -- would otherwise have nothing to read.
       .get patterns.mcpMetadataForEndpoint (resourceMetadataHandler authorization) ]
     ++ oauth.client.map .route
-  let browser :=
-    [cookies,
-     session sessions
-       { cookieName := "todomvc-session",
-         cookieAttrs := { path := some "/", httpOnly := true, sameSite := some .lax,
-                          secure := https } }]
-  let content := [params, contentType, defaultCharset, cacheControl .noCache, notModified]
+  let site : Defaults .std :=
+    if https then secureSiteDefaults sessions else siteDefaults sessions
   let notFound : Result .std := fun _ => Response.notFound.html (Todo.notFoundPage assets)
   let root (signInRoutes : List (Route (Result .std))) : Router .std :=
-    { middlewares := [forwardedScheme, forwardedRemoteAddr]
-        ++ (if https then [hsts] else [])
-        ++ [xFrameOptions .sameOrigin, xContentTypeOptions,
-            catchAll,
-            serverSpan matchedPattern?],
+    { middlewares := [defaults
+        { site with antiForgery := none, tracing := serverSpan matchedPattern? }],
       routers := [
-        { middlewares := content, routes := signInRoutes.map .route ++ [.mount tenantRoot []],
+        { routes := signInRoutes.map .route ++ [.mount tenantRoot []],
           fallback := some (StatelessHandler.ofFn notFound) },
-        { middlewares := content, routes := client },
-        { middlewares := browser ++ content ++ [antiForgery],
+        { routes := client },
+        { middlewares := [antiForgery],
           routes := appRoutes assets identity store assistant authorization oauth.browser
             providers } ],
-      fallback := some (Middleware.apply
-        (content ++ [Middleware.assets assets.served, file "public"]) (toHandler [])) }
+      fallback := some (Middleware.apply [Middleware.assets assets.served, file "public"]
+        (toHandler [])) }
   match federated with
   | none => (root (Authentication.Http.routes signIn)).toHandler
   | some federated =>
