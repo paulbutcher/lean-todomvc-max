@@ -55,18 +55,18 @@ rev = "v0.6.2"
 [[require]]
 name = "routing"
 git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.15.1"
+rev = "v0.15.2"
 
 [[require]]
 name = "routing-std"
 git = "https://github.com/paulbutcher/lean-routing"
-rev = "v0.15.1"
+rev = "v0.15.2"
 subDir = "std"
 
 [[require]]
 name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.19.0"
+rev = "v0.20.1"
 
 [[require]]
 name = "authentication"
@@ -82,19 +82,19 @@ subDir = "postgres"
 [[require]]
 name = "middleware-cookiestore"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.19.0"
+rev = "v0.20.1"
 subDir = "cookiestore"
 
 [[require]]
 name = "middleware-tracing"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.19.0"
+rev = "v0.20.1"
 subDir = "tracing"
 
 [[require]]
 name = "middleware-assets"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.19.0"
+rev = "v0.20.1"
 subDir = "assets"
 
 [[require]]
