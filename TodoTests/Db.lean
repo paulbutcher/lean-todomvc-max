@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 module
 
+public import Authentication.Store.Conformance
+public import AuthenticationPostgres
 public import Postgres
 public import Todo.Db
 public import Todo.Migrations
@@ -163,6 +165,20 @@ private def testChatMessagesSurviveTheTable (db : Conn) : IO Unit := do
   checkEq "clearing forgets one account's" 0 (← Db.chatHistory db alice).size
   checkEq "and leaves the other's" 1 (← Db.chatHistory db bob).size
 
+/-- The authentication library's own suite, against the schema `Todo.migrate` built rather than
+the one the library would create for itself, and through the store `Todo.Auth.ports` builds. What
+it catches is a migration the library shipped and this application never applied, which nothing
+else here would: no other test reads the `auth` tables, and the SQLite harness is handed the
+library's complete schema. The label keeps its tenants apart from every other run's, since the
+`auth` schema is shared. -/
+private def testAuthenticationStoreConforms : IO Unit := do
+  let pool ← Pool.create "" 2
+  let store := Authentication.Sql.sqlAuthStore Authentication.Postgres.dialect
+    (Authentication.Postgres.poolConnection pool)
+  let checks ← Authentication.Store.Conformance.run store "todomvc"
+  checkEq "the authentication store conforms against the migrated schema" ([] : List String)
+    ((checks.filter (!·.passed)).map (·.name))
+
 def runDbTests : IO Unit :=
   withTestSchema fun db schema => do
     testAddStoresWhatNormalisationAdmits db
@@ -172,5 +188,6 @@ def runDbTests : IO Unit :=
     testStatementsAreScopedToTheAccount db
     testChatMessagesSurviveTheTable db
     testConcurrentWrites db schema
+    testAuthenticationStoreConforms
 
 end TodoTests

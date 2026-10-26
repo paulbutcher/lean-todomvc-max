@@ -55,6 +55,8 @@ COPY --from=build /src/.lake/packages/leancurl/.lake/build/lib/libleancurl_shim.
 COPY --from=build /src/.lake/packages/lean-libcrypto/.lake/build/lib/libcrypto_shim.so /usr/lib64/
 COPY public /var/task/public
 COPY migrations /var/task/migrations
+COPY --from=build /src/.lake/packages/authentication/migrations/postgres \
+     /var/task/.lake/packages/authentication/migrations/postgres
 
 # "public" is resolved against the working directory, by the asset hashing at startup and by the
 # `file` middleware after it, as is "migrations" by the migration runner. Without it the function
