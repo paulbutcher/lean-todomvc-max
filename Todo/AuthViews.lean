@@ -30,9 +30,6 @@ a distinct one is `Todo.Auth.messageFor`'s decision rather than this function's:
 is faithful to each case, and what keeps a case unreachable is the policy. -/
 private def messageText : SignInMessage → String
   | .checkYourMail => "If that address can sign in, a link is on its way to it."
-  | .addressNotRecognised => "That address does not have an account here."
-  | .invitationRequired => "This list is invitation only."
-  | .domainNotAllowed => "This list does not accept that address's domain."
   | .tryAgainLater => "Too many attempts. Try again later."
   | .addressMalformed => "That does not look like an email address."
   | .accountUnavailable => "That account is closed."

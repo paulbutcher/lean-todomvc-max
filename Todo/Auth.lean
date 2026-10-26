@@ -76,7 +76,7 @@ the operating system's entropy source failing. -/
   | _ => .checkYourMail
 
 def responsePolicy : SignInResponsePolicy IO where
-  respond _ outcome := pure { message := messageFor outcome, notice := none }
+  respond _ outcome := pure { message := messageFor outcome }
 
 /-- The store and the limiter draw from the pool the application already has, rather than
 authentication holding a connection of its own on top of it. -/
