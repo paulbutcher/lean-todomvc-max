@@ -97,6 +97,28 @@ def relyingParty (baseUrl : BaseUrl) : Option RelyingParty := do
 def responsePolicy : SignInResponsePolicy IO where
   respond _ outcome := pure { message := messageFor outcome }
 
+/-- The only record of a failed send, since the page answers as though the mail went. The attempt
+or invitation id joins it to the audit trail, which holds the address this does not.
+
+Except that `detail` is the provider's own text, and SES's refusal from a sandboxed account names
+the recipients it refused. It is logged anyway, because it also names the identity that failed
+verification, which is what this record is for. `warn` for the reason `observeRefusal` gives. -/
+private def observeSendFailure (tenant : TenantId) (kind : Service.MailKind tenant)
+    (error : SendError) : IO Unit :=
+  let (mail, idKey, id) := match kind with
+    | .signIn attempt => ("sign_in", "auth.attempt", attempt.value)
+    | .invitation invitation => ("invitation", "auth.invitation", invitation.value)
+    | .rotatedInvitation invitation => ("rotated_invitation", "auth.invitation", invitation.value)
+  let (reason, detail) := match error with
+    | .addressRejected detail => ("address_rejected", detail)
+    | .addressSuppressed => ("address_suppressed", "")
+    | .rateLimited => ("rate_limited", "")
+    | .timedOut => ("timed_out", "")
+    | .providerFailure detail => ("provider_failure", detail)
+  Telemetry.runTelemetry <| Telemetry.warn "send failed"
+    ([("auth.mail", .str mail), (idKey, .str id), ("auth.send_error", .str reason)]
+      ++ if detail.isEmpty then [] else [("auth.send_detail", .str detail)])
+
 /-- The store and the limiter draw from the pool the application already has, rather than
 authentication holding a connection of its own on top of it. -/
 def ports (pool : _root_.Postgres.Pool) (settings : Settings) : Service.Ports IO :=
@@ -107,7 +129,8 @@ def ports (pool : _root_.Postgres.Pool) (settings : Settings) : Service.Ports IO
     limiter := rateLimiter Authentication.Postgres.dialect conn
     responseFloor := ResponseFloor.sleeping 400
     humanCheck := HumanCheck.unchecked IO
-    peppers := { current := settings.pepper } }
+    peppers := { current := settings.pepper }
+    observeSendFailure := some observeSendFailure }
 
 /-- What this application is called wherever somebody sees it: the sign-in pages, the subject
 line of the mail, and the name beside the address it arrives from. -/
