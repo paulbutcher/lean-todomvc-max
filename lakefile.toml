@@ -76,7 +76,7 @@ rev = "v0.23.0"
 [[require]]
 name = "leanmigratePostgres"
 git = "https://github.com/paulbutcher/leanmigrate"
-rev = "v0.6.1"
+rev = "v0.7.0"
 subDir = "postgres"
 
 [[require]]
