@@ -179,6 +179,6 @@ def main : IO Unit := AwsLambda.serve do
   let assistant ← assistant pool
   -- A function URL is reachable over https only, so TLS termination is a given here.
   pure (AwsLambda.Http.handler
-    (Todo.server assets site.identity site.http (Todo.Db.store pool) assistant sessions
-      site.authorization site.oauth site.federated site.config.providers
+    (Todo.server assets site.identity site.http site.passkey (Todo.Db.store pool)
+      assistant sessions site.authorization site.oauth site.federated site.config.providers
       (https := true)).toStd)

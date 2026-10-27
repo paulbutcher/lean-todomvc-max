@@ -561,6 +561,10 @@ the magic link's `unknown`, which is about a link that has been used or has expi
 a client reaches have no session at all: an agent holds a token rather than a cookie, and the
 resource's metadata document answers anybody.
 
+`passkey` is served beside the sign-in routes and for the same reason: its registration routes
+take the account from the session cookie alone, which `SameSite=Lax` keeps off a cross-site
+`POST`, and its sign-in routes are reached with no session at all.
+
 `federated` is the federated sign-in routes' configuration, `none` where no provider is
 configured. The library refuses a provider the tenant does not name, so mounting them regardless
 would answer the same way; this keeps a deployment that offers none from carrying routes for them.
@@ -574,7 +578,8 @@ Every library's routes arrive as configuration rather than as routes or a handle
 patterns, and so the whole table, are known here for `toHandler` to check for shadowing. For the
 same reason the match on `federated` is outside the table rather than inside it. -/
 def server [SessionStore σ] (assets : Assets) (identity : Identity)
-    (signIn : Authentication.Http.Config) (store : Store) (assistant : Assistant) (sessions : σ)
+    (signIn : Authentication.Http.Config) (passkey : Authentication.PasskeyHttp.Config)
+    (store : Store) (assistant : Assistant) (sessions : σ)
     (authorization : Authorization.Site)
     (oauth : Authentication.OAuth.Http.Config (.origin Todo.tenant))
     (federated : Option Authentication.OidcHttp.Config := none)
@@ -606,9 +611,11 @@ def server [SessionStore σ] (assets : Assets) (identity : Identity)
             providers } ],
       fallback := some (Middleware.apply [Middleware.assets assets.served, file "public"]
         (toHandler [])) }
+  let signInRoutes :=
+    Authentication.Http.routes signIn ++ Authentication.PasskeyHttp.routes passkey
   match federated with
-  | none => (root (Authentication.Http.routes signIn)).toHandler
+  | none => (root signInRoutes).toHandler
   | some federated =>
-    (root (Authentication.Http.routes signIn ++ Authentication.OidcHttp.routes federated)).toHandler
+    (root (signInRoutes ++ Authentication.OidcHttp.routes federated)).toHandler
 
 end Todo

@@ -9,6 +9,7 @@ public import Authentication
 public import Authentication.Instances
 public import AuthenticationHttp
 public import AuthenticationOidcHttp
+public import AuthenticationPasskeyHttp
 public import AuthenticationPostgres
 public import Postgres
 public import Middleware
@@ -178,6 +179,13 @@ private def observeRefusal (_tenant : TenantId) (provider : ProviderId)
     [("auth.provider", .str (Todo.Federation.label provider)),
      ("auth.refusal", .str reason.name)]
 
+/-- Every passkey refusal answers the same body, so this is the only place which one it was is
+written down. `warn` for the reason `observeRefusal` gives. -/
+private def observePasskeyRefusal (_tenant : TenantId) (reason : Passkey.CeremonyRefusal) :
+    IO Unit :=
+  Telemetry.runTelemetry <| Telemetry.warn "passkey ceremony refused"
+    [("auth.refusal", .str reason.name)]
+
 namespace Site
 
 def config (s : Site) : TenantConfig Todo.tenant := tenantConfig s.settings Todo.tenant
@@ -215,6 +223,12 @@ def federated (s : Site) : Option Authentication.OidcHttp.Config :=
       refusedPage := Todo.federationRefusedPage s.assets
       observeRefusal
       notFoundPage := Todo.notFoundPage s.assets }
+
+def passkey (s : Site) : Authentication.PasskeyHttp.Config where
+  ports := s.ports
+  verifier := Passkey.verifier
+  tenant := fun t => pure (if t == Todo.tenant then some (tenantConfig s.settings t) else none)
+  observeRefusal := observePasskeyRefusal
 
 end Site
 

@@ -115,8 +115,9 @@ private def testSignOutRevokesAndClearsTheCookie : IO Unit := do
 private def serverOf (https : Bool) : IO TestHandler := do
   let store ← memoryStore alice #[]
   let sessions ← Middleware.MemoryStore.new
-  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) (signInOn (← signInDb)) store
-    (← scriptedAssistant #[]) sessions noGrants (← oauthOn) (https := https)).onRequest
+  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) (signInOn (← signInDb))
+    (passkeyOn (← signInDb)) store (← scriptedAssistant #[]) sessions noGrants (← oauthOn)
+    (https := https)).onRequest
 
 /-- Only a deployment with something terminating TLS in front of it may mark the session cookie
 `secure` or claim `hsts`. The permissive direction is the harmful one: a `secure` cookie sent over
@@ -140,13 +141,28 @@ private def testSignInRoutesAreServedOutsideAntiForgery : IO Unit := do
   let store ← memoryStore alice #[]
   let sessions ← Middleware.MemoryStore.new
   let handler :=
-    (Todo.server testAssets anonymousIdentity (signInOn (← signInDb)) store
-      (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
+    (Todo.server testAssets anonymousIdentity (signInOn (← signInDb)) (passkeyOn (← signInDb))
+      store (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
   check "POST /t/todomvc/signin with no token"
     (mkPost "/t/todomvc/signin" "email=someone@example.com" "Connection: close\x0d\n") handler
     fun response => assertStatus response "HTTP/1.1 200"
   check "POST /todos with no token" (mkPost "/todos" "title=x" "Connection: close\x0d\n") handler
     fun response => assertStatus response "HTTP/1.1 403"
+
+/-- A passkey sign-in begins with nobody signed in and no token to offer, so it is served beside
+the sign-in routes; and the relying party the tenant was configured with is the one the browser is
+asked to sign for. -/
+private def testPasskeySignInBeginsUnguarded : IO Unit := do
+  let store ← memoryStore alice #[]
+  let sessions ← Middleware.MemoryStore.new
+  let handler :=
+    (Todo.server testAssets anonymousIdentity (signInOn (← signInDb)) (passkeyOn (← signInDb))
+      store (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
+  check "POST /t/todomvc/passkey/signin with no token"
+    (mkPost "/t/todomvc/passkey/signin" "" "Connection: close\x0d\n") handler
+    fun response => do
+      assertStatus response "HTTP/1.1 200"
+      assertContains response (testSettings.relyingParty.id)
 
 /-- Everything under the tenant's prefix belongs to the sign-in routes' router, a path naming none
 of its routes included, so it is answered with the not-found page rather than the bare 404 the
@@ -155,8 +171,8 @@ private def testMissesUnderTheTenantGetTheNotFoundPage : IO Unit := do
   let store ← memoryStore alice #[]
   let sessions ← Middleware.MemoryStore.new
   let handler :=
-    (Todo.server testAssets anonymousIdentity (signInOn (← signInDb)) store
-      (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
+    (Todo.server testAssets anonymousIdentity (signInOn (← signInDb)) (passkeyOn (← signInDb))
+      store (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
   check "GET /t/todomvc/nowhere" (mkGetClose "/t/todomvc/nowhere") handler
     fun response => do
       assertStatus response "HTTP/1.1 404"
@@ -271,6 +287,7 @@ def runAppTests : IO Unit :=
     testSignOutRevokesAndClearsTheCookie
     testTlsProfileGatesCookieAndHsts
     testSignInRoutesAreServedOutsideAntiForgery
+    testPasskeySignInBeginsUnguarded
     testMissesUnderTheTenantGetTheNotFoundPage
     testTheConnectPageNamesTheEndpointAnAgentReaches
     testTheConnectPageExplainsEveryScopeOnOffer

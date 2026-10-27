@@ -98,8 +98,8 @@ private def siteOf (store : Store) (site : Authorization.Site := authorization) 
     IO TestHandler := do
   let assistant ← scriptedAssistant #[]
   let sessions ← Middleware.MemoryStore.new
-  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) (signInOn (← signInDb)) store
-    assistant sessions site (← oauthOn)).onRequest
+  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) (signInOn (← signInDb))
+    (passkeyOn (← signInDb)) store assistant sessions site (← oauthOn)).onRequest
 
 private def call (body : String) (credential : Option String := some s!"Bearer {fullAccess}") :
     String :=

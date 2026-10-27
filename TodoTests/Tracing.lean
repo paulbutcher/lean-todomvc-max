@@ -25,8 +25,9 @@ private def active : Item := { id := 1, title := "alpha", completed := false }
 
 private def serverOf (store : Store) : IO TestHandler := do
   let sessions ← Middleware.MemoryStore.new
-  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) (signInOn (← signInDb)) store
-    (← scriptedAssistant #[]) sessions noGrants (← oauthOn)).onRequest
+  pure (Todo.server testAssets (fixedIdentity alice (← IO.mkRef 0)) (signInOn (← signInDb))
+    (passkeyOn (← signInDb)) store (← scriptedAssistant #[]) sessions noGrants
+    (← oauthOn)).onRequest
 
 private def spansFor (handler : TestHandler) (raw : String)
     (expect : ByteArray → IO Unit := fun _ => pure ()) : IO (Array SpanData) := do

@@ -28,7 +28,7 @@ RUN curl -fsSL https://elan.lean-lang.org/elan-init.sh \
 # a handler doesn't rebuild the libraries underneath it.
 COPY lakefile.toml lake-manifest.json ./
 RUN lake build Postgres Html Htmx Routing Middleware MiddlewareCookieStore AwsLambdaHttp \
-      AuthenticationOidc AuthenticationOidcHttp AuthenticationFetch
+      AuthenticationOidc AuthenticationOidcHttp AuthenticationFetch AuthenticationPasskeyHttp
 
 # Everything else the context still holds after .dockerignore has had its say, so adding or
 # renaming a source file needs no change here.

@@ -218,6 +218,14 @@ def signInOn (db : SQLite) (base : Authentication.BaseUrl := testBase) :
     tenant := fun t =>
       pure (if t == Todo.tenant then some (Todo.Auth.tenantConfig settings t) else none) }
 
+/-- The passkey routes over the same ports and tenant as `signInOn`. -/
+def passkeyOn (db : SQLite) (base : Authentication.BaseUrl := testBase) :
+    Authentication.PasskeyHttp.Config :=
+  let signIn := signInOn db base
+  { ports := signIn.ports
+    verifier := Authentication.Passkey.verifier
+    tenant := signIn.tenant }
+
 /-- The configuration of the authorisation server's own endpoints, on a database of their own.
 
 Real rather than scripted, because they are the library's routes now and there is nothing left
@@ -316,7 +324,8 @@ def browserOn (identity : Auth.Identity) (store : Store) (assistant : Assistant)
     (authorization : Authorization.Site := noGrants) : IO Middleware.Test.Browser := do
   let sessions ← Middleware.MemoryStore.new
   let handler :=
-    (Todo.server testAssets identity (signInOn (← signInDb)) store assistant sessions
+    (Todo.server testAssets identity (signInOn (← signInDb)) (passkeyOn (← signInDb))
+      store assistant sessions
       authorization
       (← oauthOn)).onRequest
   Middleware.Test.Browser.new handler (tokenFrom := pageToken)
