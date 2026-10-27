@@ -14,4 +14,4 @@ public section
 
 def main (args : List String) : IO UInt32 := do
   let conn ← Postgres.open ""
-  runCli { conn, dir := Todo.migrationsDir } args
+  runCli { conn, dir := Todo.migrationsDir, includeDirs := Todo.includedMigrationsDirs } args
