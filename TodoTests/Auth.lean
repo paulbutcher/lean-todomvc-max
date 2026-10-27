@@ -55,6 +55,22 @@ theorem onlySpeaksAboutTheRequest (outcome : Authentication.SignInOutcome) :
       outcome = .throttled ∨ outcome = .malformedAddress := by
   cases outcome <;> simp [Todo.Auth.messageFor]
 
-def runAuthTests : IO Unit := runGroup "Todo.Auth" testEverySendAsksAgain
+/-- The identifier is hashed into every credential and the origin compared exactly against what
+the browser reports, so either one carrying a slash, a port or a capital the browser would not
+puts every ceremony out of reach. -/
+private def testRelyingPartyIsTheHost : IO Unit := do
+  checkEq "a function URL, slash and all, is bound to its host"
+    (some { id := "abc.lambda-url.eu-west-2.on.aws"
+            origins := ["https://abc.lambda-url.eu-west-2.on.aws"] } : Option RelyingParty)
+    (Todo.Auth.relyingParty ⟨"https://ABC.lambda-url.eu-west-2.on.aws/"⟩)
+  checkEq "a port is the origin's and not the identifier's"
+    (some { id := "localhost", origins := ["http://localhost:3000"] } : Option RelyingParty)
+    (Todo.Auth.relyingParty ⟨"http://localhost:3000"⟩)
+  checkEq "nothing naming a host binds anything" (none : Option RelyingParty)
+    (Todo.Auth.relyingParty ⟨"todos.example"⟩)
+
+def runAuthTests : IO Unit := runGroup "Todo.Auth" do
+  testEverySendAsksAgain
+  testRelyingPartyIsTheHost
 
 end TodoTests

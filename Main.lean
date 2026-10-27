@@ -75,9 +75,13 @@ def main : IO Unit := Async.block do
     -- no provider registered gets the magic link and no buttons.
     let federation ← Todo.Federation.fromEnv
     let assets ← Todo.Assets.load "public"
+    let baseUrl : Authentication.BaseUrl := ⟨s!"http://localhost:{port}"⟩
+    let some relyingParty := Todo.Auth.relyingParty baseUrl
+      | throw (IO.userError s!"{baseUrl.origin} names no host for a passkey to be bound to")
     let site := Todo.Auth.site pool
       { pepper := developmentPepper
-        baseUrl := ⟨s!"http://localhost:{port}"⟩
+        baseUrl
+        relyingParty
         senderAddress := ⟨"no-reply", ⟨["todomvc", "example"]⟩⟩
         transport := Authentication.EmailTransport.console
         federation }

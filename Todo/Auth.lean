@@ -40,6 +40,8 @@ structure Settings where
   /-- Where the magic link points, which is the one thing about this application the mail has to
   know and the application cannot discover for itself. -/
   baseUrl : BaseUrl
+  /-- What every passkey registered here is bound to, for good. `relyingParty` derives it. -/
+  relyingParty : RelyingParty
   /-- Only the address is a deployment's to choose: the name beside it in an inbox is what
   this application is called, which is settled below and not per deployment. -/
   senderAddress : EmailAddress
@@ -74,6 +76,21 @@ the operating system's entropy source failing. -/
   | .throttled => .tryAgainLater
   | .malformedAddress => .addressMalformed
   | _ => .checkYourMail
+
+/-- The base URL's own host, and the one origin a ceremony may report having run on.
+
+Derived, which the library declines to do, because here there is nothing to choose: a function
+URL's host sits directly under a public suffix, so WebAuthn admits no identifier but the host
+itself. The cost is that moving to another hostname strands every passkey registered on this one.
+
+Folded to lower case because a browser reports the origin that way and the identifier is compared
+by its hash. `none` is a base URL naming no host, which is a deployment misconfigured rather than
+one offering no passkeys. -/
+def relyingParty (baseUrl : BaseUrl) : Option RelyingParty := do
+  let parts ← Url.parts? baseUrl.origin
+  let (host, _) ← Url.hostAndPort? parts.authority
+  if host.isEmpty then none
+  pure { id := host.toLower, origins := [s!"{parts.scheme}://{parts.authority.toLower}"] }
 
 def responsePolicy : SignInResponsePolicy IO where
   respond _ outcome := pure { message := messageFor outcome }
@@ -116,6 +133,7 @@ def tenantConfig (settings : Settings) (t : TenantId) : TenantConfig t where
   -- Empty unless a deployment named one, which is what makes the federated routes answer
   -- `not found` for every provider rather than being mounted conditionally.
   providers := (settings.federation.map (·.providers)).getD []
+  passkeyRelyingParty := some settings.relyingParty
 
 structure Site where
   ports : Service.Ports IO

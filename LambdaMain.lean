@@ -88,6 +88,8 @@ def authSettings : IO Todo.Auth.Settings := do
   let baseUrl := Authentication.BaseUrl.ofString raw
   if baseUrl.origin.isEmpty then
     throw (IO.userError "BASE_URL names no origin, so a sign-in link would point nowhere")
+  let some relyingParty := Todo.Auth.relyingParty baseUrl
+    | throw (IO.userError s!"BASE_URL is {raw}, which names no host for a passkey to be bound to")
   let some sender ← IO.getEnv "MAIL_FROM"
     | throw (IO.userError "MAIL_FROM is not set")
   let .ok address := Authentication.EmailAddress.parse sender
@@ -98,6 +100,7 @@ def authSettings : IO Todo.Auth.Settings := do
   pure
     { pepper := ← pepper
       baseUrl
+      relyingParty
       senderAddress := address
       replyTo := ← replyToAddress
       transport := Todo.Auth.refreshing awsCredentials fun credentials =>

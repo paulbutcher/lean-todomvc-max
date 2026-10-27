@@ -188,9 +188,12 @@ def holdingConnections (live : IO.Ref (List Authorization.Connection))
         pure held.length }
 
 /-- Mail is dropped rather than printed: what a test needs from a sign-in is the response. -/
-def testSettings (base : Authentication.BaseUrl := testBase) : Todo.Auth.Settings :=
+def testSettings (base : Authentication.BaseUrl := testBase)
+    (relyingParty : Authentication.RelyingParty :=
+      { id := "todos.example", origins := [testBase.origin] }) : Todo.Auth.Settings :=
   { pepper := { keyId := ⟨"test"⟩, secret := "todomvc-test-pepper".toUTF8 }
     baseUrl := base
+    relyingParty
     senderAddress := ⟨"no-reply", ⟨["todos", "example"]⟩⟩
     transport := Authentication.EmailTransport.capturing fun _ => pure () }
 
