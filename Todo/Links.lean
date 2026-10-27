@@ -22,6 +22,7 @@ route_table Routes
     signOut         := "/signout",
     account         := "/account",
     accountUnlink   := "/account/unlink",
+    accountRenamePasskey := "/account/passkey/rename",
     connect         := "/connect",
     disconnect      := "/connect/disconnect",
     disconnectOne   := "/connect/disconnect/one",

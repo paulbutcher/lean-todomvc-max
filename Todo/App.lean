@@ -253,21 +253,24 @@ private def accountView (assets : Assets) (identity : Identity)
     ContextAsync (Response Body.Any) := do
   let address ← (identity.address account : IO _)
   let linked ← (identity.linked account : IO _)
-  accountPage assets address providers linked ((req.extensions.get AntiForgeryToken).map (·.value)) notice
+  let passkeys ← (identity.passkeys account : IO _)
+  accountPage assets address providers linked passkeys
+    ((req.extensions.get AntiForgeryToken).map (·.value)) notice
     |> Response.ok.html
 
 def accountHandler (assets : Assets) (identity : Identity) (providers : List Authentication.ProviderConfig)
     (account : Account) (req : Request Body.Stream) : ContextAsync (Response Body.Any) :=
   accountView assets identity providers account req
 
-/-- Takes one provider away from this account.
+/-- Takes one provider or passkey away from this account.
 
 A credential that is not this account's and one that never existed are the same answer, which is
 the library's choice repeated here: telling them apart would let somebody guessing identifiers
 learn which ones are real.
 
 The name is read before the removal, because afterwards there is no credential left to read it
-from and the page has to say which one went. -/
+from and the page has to say which one went. Only a provider's is logged: a passkey's is whatever
+the person typed, which is theirs rather than this application's. -/
 def accountUnlinkHandler (assets : Assets) (identity : Identity)
     (providers : List Authentication.ProviderConfig) (account : Account) (credential? : Option String)
     (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
@@ -276,26 +279,50 @@ def accountUnlinkHandler (assets : Assets) (identity : Identity)
     (Telemetry.info "unlink named no credential" [] : TelemetryT Async Unit).run (parentSpan req)
     "Missing credential" |> Response.badRequest.text
   | some raw =>
-    let name := (← (identity.linked account : IO _)).find? (·.id.value == raw)
+    let passkey := (← (identity.passkeys account : IO _)).find? (·.credential.value == raw)
+    let provider := (← (identity.linked account : IO _)).find? (·.id.value == raw)
       |>.bind (fun credential =>
         match credential.descriptor with
         | .federatedIdentity identity =>
           (providers.find? (·.issuer == identity.issuer)).map (Todo.Federation.label ·.id)
         | .emailAddress _ | .passkey _ => none)
-      |>.getD "that provider"
     let outcome ← (identity.unlink account ⟨raw⟩ : IO _)
-    let notice : AccountNotice := match outcome with
-      | .ok () => .disconnected name
-      | .error .lastWayIn => .lastWayIn
-      | .error .notThisAccount => .alreadyGone
+    let notice : AccountNotice := match outcome, passkey with
+      | .ok (), some passkey => .passkeyRemoved (passkeyName passkey.label)
+      | .ok (), none => .disconnected (provider.getD "that provider")
+      | .error .lastWayIn, _ => .lastWayIn
+      | .error .notThisAccount, _ => .alreadyGone
     (Telemetry.info "identity unlink"
-      [("auth.provider", .str name),
+      [("auth.credential_kind", .str (if passkey.isSome then "passkey" else "provider")),
+       ("auth.provider", .str (provider.getD "none")),
        ("auth.outcome", .str (match outcome with
          | .ok () => "unlinked"
          | .error .lastWayIn => "refused, last way in"
          | .error .notThisAccount => "not this account"))]
       : TelemetryT Async Unit).run (parentSpan req)
     accountView assets identity providers account req (some notice)
+
+/-- Renames one of this account's passkeys. A credential that is not one of them is answered as
+gone, for the reason `accountUnlinkHandler` gives. The label is trimmed and may be empty, which is
+a passkey with no name rather than a mistake. -/
+def accountRenamePasskeyHandler (assets : Assets) (identity : Identity)
+    (providers : List Authentication.ProviderConfig) (account : Account) (credential? : Option String)
+    (label? : Option String) (req : Request Body.Stream) : ContextAsync (Response Body.Any) := do
+  match credential?, label? with
+  | some raw, some label =>
+    let label := label.trimAscii.toString
+    let renamed ← (identity.rename account ⟨raw⟩ label : IO _)
+    (Telemetry.info "passkey rename"
+      [("auth.outcome", .str (if renamed then "renamed" else "not this account"))]
+      : TelemetryT Async Unit).run (parentSpan req)
+    let notice : AccountNotice := if renamed then .renamed (passkeyName label) else .alreadyGone
+    accountView assets identity providers account req (some notice)
+  | _, _ =>
+    (Telemetry.info "rename named no credential or label"
+      [("auth.credential_named", .str (if credential?.isSome then "yes" else "no")),
+       ("auth.label_named", .str (if label?.isSome then "yes" else "no"))]
+      : TelemetryT Async Unit).run (parentSpan req)
+    "Missing credential or label" |> Response.badRequest.text
 
 /-- Ends this browser's session and clears the cookie carrying it. Clearing without revoking
 would leave a credential that still works in the hands of whoever recovers the cookie, and
@@ -519,6 +546,10 @@ private def appRoutes (assets : Assets) (identity : Identity) (store : Store) (a
     .post patterns.accountUnlink
       (extract (a ← signedIn identity) (credential ← Extract.field? "credential") =>
         accountUnlinkHandler assets identity providers a credential),
+    .post patterns.accountRenamePasskey
+      (extract (a ← signedIn identity) (credential ← Extract.field? "credential")
+          (label ← Extract.field? "label") =>
+        accountRenamePasskeyHandler assets identity providers a credential label),
     .get patterns.connect (extract (a ← signedIn identity) => connectHandler assets authorization a),
     .post patterns.disconnect (extract (a ← signedIn identity) =>
       disconnectHandler assets authorization a),

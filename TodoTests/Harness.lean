@@ -99,6 +99,8 @@ def fixedIdentity (account : Account) (revocations : IO.Ref Nat) : Auth.Identity
   signOut := fun _ _ => revocations.modify (· + 1)
   linked := fun _ => pure []
   unlink := fun _ _ => pure (.error .notThisAccount)
+  passkeys := fun _ => pure []
+  rename := fun _ _ _ => pure false
 
 /-- Nobody is signed in, which is what every request arrives as before it has been. -/
 def anonymousIdentity : Auth.Identity where
@@ -107,6 +109,30 @@ def anonymousIdentity : Auth.Identity where
   signOut := fun _ _ => pure ()
   linked := fun _ => pure []
   unlink := fun _ _ => pure (.error .notThisAccount)
+  passkeys := fun _ => pure []
+  rename := fun _ _ _ => pure false
+
+/-- Signed in as `account`, holding the passkeys `held` names. Registering one takes an
+authenticator, so they are stood in for here; removing and renaming act on `held`, and refuse a
+credential it does not name, as the library does. -/
+def passkeyIdentity (account : Account) (held : IO.Ref (List HeldPasskey)) : Auth.Identity where
+  of := fun _ => pure (some account)
+  address := fun _ => pure (some s!"{account.value}@example.com")
+  signOut := fun _ _ => pure ()
+  linked := fun _ => pure []
+  unlink := fun _ credential => do
+    let passkeys ← held.get
+    if passkeys.any (·.credential == credential) then
+      held.set (passkeys.filter (·.credential != credential))
+      pure (.ok ())
+    else pure (.error .notThisAccount)
+  passkeys := fun _ => held.get
+  rename := fun _ credential label => do
+    let passkeys ← held.get
+    if passkeys.any (·.credential == credential) then
+      held.set (passkeys.map fun p => if p.credential == credential then { p with label } else p)
+      pure true
+    else pure false
 
 /-- Whoever `current` names, so that a test can hold a page from a signed-in session and then have
 that session lapse under it. -/
@@ -116,6 +142,8 @@ def switchableIdentity (current : IO.Ref (Option Account)) : Auth.Identity where
   signOut := fun _ _ => pure ()
   linked := fun _ => pure []
   unlink := fun _ _ => pure (.error .notThisAccount)
+  passkeys := fun _ => pure []
+  rename := fun _ _ _ => pure false
 
 /-! ## The assistant -/
 

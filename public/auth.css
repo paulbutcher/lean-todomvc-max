@@ -285,3 +285,20 @@ Released under Apache 2.0 license as described in the file LICENSE.
 .auth ul.providers form {
   margin: 0;
 }
+
+/* A passkey's name is shown in the field that changes it, so the field takes the room the name
+   would have taken. */
+.auth ul.passkeys form.rename {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.auth ul.passkeys form.rename input[type="text"] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 16px;
+}

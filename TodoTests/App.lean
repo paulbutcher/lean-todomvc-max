@@ -211,6 +211,51 @@ private def testPasskeySignInCarriesReturnTo : IO Unit := do
   let page ← (← browserOf #[]).get s!"{signInPath}?returnTo=%2Factive"
   assertContains page s!"{passkeyRoute "signin"}?returnTo=/active"
 
+private def workLaptop : HeldPasskey :=
+  { credential := ⟨"credential-1"⟩, label := "Work laptop", synced := true }
+
+private def passkeyBrowser (held : IO.Ref (List HeldPasskey)) : IO Middleware.Test.Browser := do
+  let browser ← browserOn (passkeyIdentity alice held) (← memoryStore alice #[])
+    (← scriptedAssistant #[])
+  discard <| browser.get Routes.links.account
+  pure browser
+
+/-- The account page is where somebody decides which passkey to remove, so each has to be told
+apart there, the one with no name included. -/
+private def testTheAccountPageNamesEveryPasskey : IO Unit := do
+  let held ← IO.mkRef [workLaptop, { credential := ⟨"credential-2"⟩, label := "", synced := false }]
+  let page ← (← passkeyBrowser held).get Routes.links.account
+  assertContains page "Work laptop"
+  assertContains page (passkeyName "")
+
+/-- A rename lands on the passkey it names, trimmed, and the page says what it is now called. -/
+private def testRenamingAPasskey : IO Unit := do
+  let held ← IO.mkRef [workLaptop]
+  let response ← (← passkeyBrowser held).post Routes.links.accountRenamePasskey
+    [("credential", workLaptop.credential.value), ("label", "  Home desktop  ")]
+  assertContains response "Renamed to Home desktop."
+  checkEq "the label was stored trimmed" ["Home desktop"] ((← held.get).map (·.label))
+
+/-- Removing a passkey says which one went, by the name it had: afterwards there is no passkey
+left to read it from. -/
+private def testRemovingAPasskey : IO Unit := do
+  let held ← IO.mkRef [workLaptop]
+  let response ← (← passkeyBrowser held).post Routes.links.accountUnlink
+    [("credential", workLaptop.credential.value)]
+  assertContains response "Work laptop is removed"
+  checkEq "and it is gone" 0 (← held.get).length
+
+/-- A credential the account does not hold is answered as gone, by rename and removal alike, and
+neither touches what the account does hold. -/
+private def testAnotherCredentialIsAnsweredAsGone : IO Unit := do
+  let held ← IO.mkRef [workLaptop]
+  let browser ← passkeyBrowser held
+  assertContains (← browser.post Routes.links.accountRenamePasskey
+    [("credential", "somebody-elses"), ("label", "Mine now")]) "That one was already gone."
+  assertContains (← browser.post Routes.links.accountUnlink [("credential", "somebody-elses")])
+    "That one was already gone."
+  checkEq "what the account holds is untouched" [workLaptop] (← held.get)
+
 /-- Somebody whose assistant has stopped working needs a way out of it from here, and the way out
 is a request to this application rather than something to do in the assistant. -/
 private def testTheConnectPageOffersAWayToWithdrawApprovals : IO Unit := do
@@ -308,6 +353,10 @@ def runAppTests : IO Unit :=
     testTheConnectPageServesWhatMakesTheCopyButtonWork
     testPasskeyControlsComeWithTheirScript
     testPasskeySignInCarriesReturnTo
+    testTheAccountPageNamesEveryPasskey
+    testRenamingAPasskey
+    testRemovingAPasskey
+    testAnotherCredentialIsAnsweredAsGone
     testTheConnectPageSaysWhoHoldsWhat
     testDisconnectingOneLeavesTheRest
     testDisconnectingNothingIsRefusedRatherThanTakenAsEverything

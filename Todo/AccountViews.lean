@@ -20,14 +20,29 @@ namespace Todo
 
 /-- What the page says happened, where something did.
 
-There is no `connected`: a link ends in a redirect the library issues, which carries nothing, and
-the row saying `Connected` is the confirmation anyway. -/
+There is no `connected`, and no passkey `added`: a link ends in a redirect the library issues and a
+passkey in a reload, neither of which carries anything, and the new row is the confirmation
+anyway. -/
 inductive AccountNotice where
   | disconnected (name : String)
+  | passkeyRemoved (label : String)
+  | renamed (label : String)
   /-- The library refused because it would have left no way into the account. -/
   | lastWayIn
   | alreadyGone
   deriving DecidableEq, _root_.Repr
+
+/-- What the page shows of a passkey: what it is called, and whether it can outlive the device
+holding it, which is what decides whether losing that device loses the way in. -/
+structure HeldPasskey where
+  credential : Authentication.CredentialId Todo.tenant
+  label : String
+  synced : Bool
+  deriving DecidableEq, _root_.Repr
+
+/-- An authenticator does not name itself and the name is optional, so one may have none. -/
+def passkeyName (label : String) : String :=
+  if label.trimAscii.isEmpty then "Unnamed passkey" else label
 
 /-- The identity the account holds for this provider, if it holds one. Matched on the issuer
 because that is what a credential records: the provider's own name for itself, which is what an
@@ -45,7 +60,9 @@ private def noticeText : AccountNotice → String
   | .lastWayIn =>
     "That is the only way into this account at the moment, so it has been kept. Connect \
      another first, or make sure mail reaches your address."
-  | .alreadyGone => "That one was already disconnected."
+  | .passkeyRemoved label => s!"{label} is removed and can no longer sign you in."
+  | .renamed label => s!"Renamed to {label}."
+  | .alreadyGone => "That one was already gone."
 
 /-- A `POST` rather than a link, and this is the whole of why the account page exists.
 
@@ -84,6 +101,25 @@ private def providerRow (linked : List (Authentication.Credential Todo.tenant))
     li [ span [s!"{Todo.Federation.label provider.id}"] { class_ := "provider-name" },
          connectForm provider ]
 
+/-- The name is shown in the field that changes it, so a row is the passkey and its controls with
+nothing said twice. Both forms are ordinary posts to this application's routes, so unlike adding
+one, renaming and removing need no script. -/
+private def passkeyRow (token : Option String) (passkey : HeldPasskey) : Node .listItem :=
+  li [ form
+         (hidden Middleware.defaultAntiForgeryParamName token
+           ++ hidden "credential" (some passkey.credential.value)
+           ++ [ (input { type := "text", name := "label", value := passkey.label,
+                         placeholder := "Unnamed passkey" }
+                  [("aria-label", "Name"), ("autocomplete", "off")] : Node .flow),
+                (button ["Rename"] { class_ := "quiet" } : Node .flow) ])
+         { method := "post", action := links.accountRenamePasskey, class_ := "rename" },
+       span [if passkey.synced then "Synced" else "This device only"] { class_ := "note" },
+       form
+         (hidden Middleware.defaultAntiForgeryParamName token
+           ++ hidden "credential" (some passkey.credential.value)
+           ++ [(button ["Remove"] { class_ := "quiet" } : Node .flow)])
+         { method := "post", action := links.accountUnlink } ]
+
 /-- The name is asked for here because a list of passkeys that all read alike is no help deciding
 which one to remove. -/
 private def addPasskey : Node .flow :=
@@ -105,8 +141,8 @@ The address is always one of them and is not listed among the providers: every a
 created by a link to it and none can be without one, so showing it as something to connect or
 disconnect would offer a choice that does not exist. -/
 def accountPage (assets : Assets) (address : Option String) (providers : List Authentication.ProviderConfig)
-    (linked : List (Authentication.Credential Todo.tenant)) (token : Option String)
-    (notice : Option AccountNotice := none) : String :=
+    (linked : List (Authentication.Credential Todo.tenant)) (passkeys : List HeldPasskey)
+    (token : Option String) (notice : Option AccountNotice := none) : String :=
   cardPage assets "Your account"
     ([ h2 ["Your account"] ]
       ++ (match notice with
@@ -115,13 +151,15 @@ def accountPage (assets : Assets) (address : Option String) (providers : List Au
       ++ (match address with
           | none => []
           | some address => [(p [s!"Signed in as {address}"] : Node .flow)])
-      ++ (if providers.isEmpty then
-            [(p ["Signing in is by emailed link only."] : Node .flow)]
-          else
+      ++ (if providers.isEmpty then [] else
             [ (p ["As well as the link we mail you, you can sign in with any of these. \
                    Connecting one here is the only way to use a provider that hides your \
                    address, because there is then no address for us to match on."] : Node .flow),
               (ul (providers.map (providerRow linked token)) { class_ := "providers" }
+                : Node .flow) ])
+      ++ (if passkeys.isEmpty then [] else
+            [ (Html.label ["Your passkeys"] : Node .flow),
+              (ul (passkeys.map (passkeyRow token)) { class_ := "providers passkeys" }
                 : Node .flow) ])
       ++ [addPasskey, (p [a { href := links.index } ["Back to your todos"]] : Node .flow)])
     [assets.passkeyScript]

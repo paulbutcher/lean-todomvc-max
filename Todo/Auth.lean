@@ -14,6 +14,7 @@ public import AuthenticationPostgres
 public import Postgres
 public import Middleware
 public import Telemetry
+public import Todo.AccountViews
 public import Todo.AuthMail
 public import Todo.Authorization
 public import Todo.AuthViews
@@ -274,6 +275,17 @@ private def unlink (s : Site) (account : Todo.Account) (credential : CredentialI
     IO (Except Service.UnlinkRefusal Unit) :=
   Service.unlinkIdentity s.ports s.config account credential
 
+private def passkeys (s : Site) (account : Todo.Account) : IO (List Todo.HeldPasskey) := do
+  pure ((← Service.passkeys s.ports account).map fun registration =>
+    { credential := registration.credential, label := registration.label
+      synced := registration.backupState })
+
+/-- `false` for a credential that is not one of this account's passkeys, which the library checks
+rather than trusting the identifier a form sent. -/
+private def rename (s : Site) (account : Todo.Account) (credential : CredentialId Todo.tenant)
+    (label : String) : IO Bool :=
+  Service.renamePasskey s.ports account credential label
+
 /-- What the application needs of a signed-in person, as operations rather than as the `Site`
 they are reached through. Same reason `Todo.Store` is a record: the handlers can then be driven
 without a database, and what happens against a real one is settled where it happens.
@@ -285,6 +297,8 @@ structure Identity where
   signOut : Request Body.Stream → Todo.Account → IO Unit
   linked : Todo.Account → IO (List (Credential Todo.tenant))
   unlink : Todo.Account → CredentialId Todo.tenant → IO (Except Service.UnlinkRefusal Unit)
+  passkeys : Todo.Account → IO (List Todo.HeldPasskey)
+  rename : Todo.Account → CredentialId Todo.tenant → String → IO Bool
 
 def Site.identity (s : Site) : Identity where
   of := identify s
@@ -292,6 +306,8 @@ def Site.identity (s : Site) : Identity where
   signOut := signOut s
   linked := linked s
   unlink := unlink s
+  passkeys := passkeys s
+  rename := rename s
 
 /-- Rebuilds the transport from `fresh` for every send.
 
