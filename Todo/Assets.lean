@@ -36,6 +36,8 @@ structure Assets where
   /-- The copy button on the connect page, the one thing on any of these pages a browser cannot
   do without being told how. -/
   connectScript : ScriptAttrs
+  /-- Registering and signing in with a passkey, which only script can do. -/
+  passkeyScript : ScriptAttrs
 
 namespace Assets
 
@@ -59,7 +61,8 @@ def load (root : System.FilePath) : IO Assets := do
       authCss := { rel := "stylesheet", href := ← path served "auth.css" }
       chatCss := { rel := "stylesheet", href := ← path served "chat.css" }
       chatScript := { src := ← path served "chat.js" }
-      connectScript := { src := ← path served "connect.js" } }
+      connectScript := { src := ← path served "connect.js" }
+      passkeyScript := { src := ← path served "passkey.js" } }
 
 end Assets
 

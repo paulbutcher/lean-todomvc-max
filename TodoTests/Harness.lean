@@ -34,7 +34,8 @@ def testAssets : Todo.Assets :=
     authCss := { rel := "stylesheet", href := "/auth.css" }
     chatCss := { rel := "stylesheet", href := "/chat.css" }
     chatScript := { src := "/chat.js" }
-    connectScript := { src := "/connect.js" } }
+    connectScript := { src := "/connect.js" }
+    passkeyScript := { src := "/passkey.js" } }
 
 /-- Whether a rendered page says something, for the tests that read one directly rather than
 through a response. -/

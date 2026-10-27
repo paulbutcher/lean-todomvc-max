@@ -84,6 +84,21 @@ private def providerRow (linked : List (Authentication.Credential Todo.tenant))
     li [ span [s!"{Todo.Federation.label provider.id}"] { class_ := "provider-name" },
          connectForm provider ]
 
+/-- The name is asked for here because a list of passkeys that all read alike is no help deciding
+which one to remove. -/
+private def addPasskey : Node .flow :=
+  passkeyBlock
+    [ p ["A passkey signs you in with this device's screen lock or a security key, with nothing \
+          to type and nothing that can be sent to the wrong site."],
+      (Html.label ["Name for a new passkey"] { for_ := "passkey-label" } : Node .flow),
+      p [input { type := "text", id := "passkey-label", placeholder := "This laptop" }
+           [("autocomplete", "off")]],
+      p [button ["Add a passkey"] { type := "button", class_ := "quiet" }
+          [("data-passkey-action", "register"), ("data-begin", passkeyRoute "register"),
+           ("data-complete", passkeyRoute "register/complete"), ("data-label", "passkey-label"),
+           ("data-status", "passkey-status")]],
+      passkeyStatus ]
+
 /-- Where somebody sees what can get them into this account, and changes it.
 
 The address is always one of them and is not listed among the providers: every account here was
@@ -108,6 +123,7 @@ def accountPage (assets : Assets) (address : Option String) (providers : List Au
                    address, because there is then no address for us to match on."] : Node .flow),
               (ul (providers.map (providerRow linked token)) { class_ := "providers" }
                 : Node .flow) ])
-      ++ [(p [a { href := links.index } ["Back to your todos"]] : Node .flow)])
+      ++ [addPasskey, (p [a { href := links.index } ["Back to your todos"]] : Node .flow)])
+    [assets.passkeyScript]
 
 end Todo

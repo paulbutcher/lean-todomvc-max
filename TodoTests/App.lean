@@ -197,6 +197,20 @@ served the button and not the script would look finished and be inert. -/
 private def testTheConnectPageServesWhatMakesTheCopyButtonWork : IO Unit := do
   assertContains (← (← browserOf #[]).get Routes.links.connect) testAssets.connectScript.src
 
+/-- The passkey controls are rendered hidden and revealed by the script, so a page that served
+them and not the script would offer no passkeys at all and look as if it had none to offer. -/
+private def testPasskeyControlsComeWithTheirScript : IO Unit := do
+  let browser ← browserOf #[]
+  assertContains (← browser.get signInPath) testAssets.passkeyScript.src
+  assertContains (← browser.get Routes.links.account) testAssets.passkeyScript.src
+
+/-- The begin is the only request of a passkey sign-in the page makes with the target in hand,
+so somebody sent to sign in on the way to a consent page has to have it carried there, or they
+land on the list with the agent still waiting. -/
+private def testPasskeySignInCarriesReturnTo : IO Unit := do
+  let page ← (← browserOf #[]).get s!"{signInPath}?returnTo=%2Factive"
+  assertContains page s!"{passkeyRoute "signin"}?returnTo=/active"
+
 /-- Somebody whose assistant has stopped working needs a way out of it from here, and the way out
 is a request to this application rather than something to do in the assistant. -/
 private def testTheConnectPageOffersAWayToWithdrawApprovals : IO Unit := do
@@ -292,6 +306,8 @@ def runAppTests : IO Unit :=
     testTheConnectPageNamesTheEndpointAnAgentReaches
     testTheConnectPageExplainsEveryScopeOnOffer
     testTheConnectPageServesWhatMakesTheCopyButtonWork
+    testPasskeyControlsComeWithTheirScript
+    testPasskeySignInCarriesReturnTo
     testTheConnectPageSaysWhoHoldsWhat
     testDisconnectingOneLeavesTheRest
     testDisconnectingNothingIsRefusedRatherThanTakenAsEverything

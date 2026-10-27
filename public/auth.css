@@ -233,9 +233,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 }
 
 /* Styled as the buttons are, because that is what they do here: each one starts a sign-in. The
-   `a` stays an `a` because starting one is a `GET`, and a form per provider would say otherwise. */
-.auth a.provider {
+   `a` stays an `a` because starting one is a `GET`, and a form per provider would say otherwise.
+   The passkey button is a `button` and looks like the rest, being one more way in. */
+.auth a.provider,
+.auth button.provider {
   display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 0;
+  font-family: inherit;
   padding: 12px;
   font-size: 16px;
   color: #4d4d4d;
@@ -246,7 +252,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
   border-radius: 2px;
 }
 
-.auth a.provider:hover {
+.auth a.provider:hover,
+.auth button.provider:hover {
   background: #f5f5f5;
 }
 

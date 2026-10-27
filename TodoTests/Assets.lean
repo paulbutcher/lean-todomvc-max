@@ -46,7 +46,7 @@ private def testRenderedPathsAreServed : IO Unit := do
   let assets ← Assets.load "public"
   let rendered :=
     [assets.favicon.href, assets.authCss.href, assets.chatCss.href,
-     assets.chatScript.src, assets.connectScript.src]
+     assets.chatScript.src, assets.connectScript.src, assets.passkeyScript.src]
   for path in rendered do
     checkEq s!"{path} is served" true (assets.served.entry? path).isSome
 

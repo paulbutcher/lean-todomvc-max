@@ -72,22 +72,49 @@ private def codeAside (context : PageContext) (expanded : Bool := false) : List 
                codeField context action "Code from the mail" "emailed-code" ])
       { class_ := "aside", open_ := expanded } ]
 
+private def withReturnTo (path : String) : Option String → String
+  | none => path
+  | some target => path ++ "?" ++ (Std.Http.URI.Query.empty.insert "returnTo" target).toRawString
+
 /-- Where a federated sign-in begins, which is the library's route rather than one of this
 application's. `returnTo` rides as a query parameter because starting one is a `GET`. -/
 def federatedStart (id : Authentication.ProviderId) (returnTo : Option String := none) : String :=
-  let path := Authentication.BaseUrl.tenantPath Todo.tenant ++ "/federated/" ++ id.value
-  match returnTo with
-  | none => path
-  | some target =>
-    path ++ "?" ++ (Std.Http.URI.Query.empty.insert "returnTo" target).toRawString
+  withReturnTo (Authentication.BaseUrl.tenantPath Todo.tenant ++ "/federated/" ++ id.value)
+    returnTo
 
-/-- The providers on offer, below the form rather than above it: every account here has an
-address, and a provider is the shortcut rather than the way in. Nothing renders where a
-deployment configured none. -/
-private def providerChoices (providers : List Authentication.ProviderConfig)
+/-- Where a passkey ceremony is begun or completed, which is the library's route. -/
+def passkeyRoute (route : String) : String :=
+  Authentication.BaseUrl.tenantPath Todo.tenant ++ "/passkey/" ++ route
+
+/-- Rendered `hidden`, for `passkey.js` to reveal where the browser can make or use a passkey, so
+that one which cannot is offered nothing rather than a button that fails. -/
+def passkeyBlock (children : List (Node .flow)) : Node .flow :=
+  div children {} [("data-passkey", ""), ("hidden", "")]
+
+/-- Where `passkey.js` says what went wrong, since a failed ceremony changes nothing else about
+the page. -/
+def passkeyStatus : Node .flow :=
+  p [] { id := "passkey-status", class_ := "warn" } [("aria-live", "polite")]
+
+/-- `returnTo` rides on the begin as a query parameter, which is where the route reads it; the
+ceremony carries it to the completion, which answers it already checked. -/
+private def passkeySignIn (returnTo : Option String) : List (Node .flow) :=
+  [ p [button ["Sign in with a passkey"] { type := "button", class_ := "provider" }
+        [("data-passkey-action", "signin"),
+         ("data-begin", withReturnTo (passkeyRoute "signin") returnTo),
+         ("data-complete", passkeyRoute "signin/complete"), ("data-status", "passkey-status")]],
+    passkeyStatus ]
+
+/-- Every other way in, below the form rather than above it: every account here has an address,
+and the rest are shortcuts rather than the way in.
+
+The divider goes inside the passkey block where nothing else follows it, so that a browser with no
+passkeys and a deployment with no providers are not left an "or" introducing nothing. -/
+private def alternatives (providers : List Authentication.ProviderConfig)
     (returnTo : Option String) : List (Node .flow) :=
-  if providers.isEmpty then [] else
-    (p ["or"] { class_ := "divider" } : Node .flow) ::
+  let divider : Node .flow := p ["or"] { class_ := "divider" }
+  if providers.isEmpty then [passkeyBlock (divider :: passkeySignIn returnTo)] else
+    divider :: passkeyBlock (passkeySignIn returnTo) ::
       providers.map fun provider =>
         (p [a { href := federatedStart provider.id returnTo, class_ := "provider" }
             [s!"Continue with {Todo.Federation.label provider.id}"]] : Node .flow)
@@ -136,7 +163,8 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
             ++ hidden "returnTo" context.returnTo
             ++ [(button ["Send me a link"] : Node .flow)])
           { method := "post", action := context.action } ]
-        ++ providerChoices providers context.returnTo)
+        ++ alternatives providers context.returnTo)
+      [assets.passkeyScript]
   -- Two shapes, chosen by the message rather than by the outcome, which is what keeps this from
   -- being an oracle of its own: `Todo.Auth.messageFor` has already decided what may be
   -- distinguished, and everything it holds back arrives here as `checkYourMail` and gets the
