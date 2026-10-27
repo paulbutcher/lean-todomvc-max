@@ -58,6 +58,16 @@ body {
   margin-right: auto;
 }
 
+/* A button only because signing out is a POST; it sits among the footer's links and should read
+   as one, as `todomvc-app-css` styles `.info a`. */
+.info .sign-out {
+  cursor: pointer;
+}
+
+.info .sign-out:hover {
+  text-decoration: underline;
+}
+
 .app-divider {
   flex: 0 0 var(--chat-divider-width);
   cursor: col-resize;
