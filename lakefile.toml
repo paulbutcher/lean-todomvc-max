@@ -25,12 +25,12 @@ rev = "v0.5.2"
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.11.0"
+rev = "v0.12.0"
 
 [[require]]
 name = "markdown"
 git = "https://github.com/paulbutcher/lean-markdown"
-rev = "v0.8.1"
+rev = "v0.8.2"
 
 [[require]]
 name = "LLMClient"
@@ -50,7 +50,7 @@ rev = "v0.4.2"
 [[require]]
 name = "htmx"
 git = "https://github.com/paulbutcher/lean-htmx"
-rev = "v0.6.2"
+rev = "v0.7.0"
 
 [[require]]
 name = "routing"
@@ -71,7 +71,7 @@ rev = "v0.20.1"
 [[require]]
 name = "authentication"
 git = "https://github.com/paulbutcher/lean-authentication"
-rev = "v0.24.0"
+rev = "v0.25.0"
 
 [[require]]
 name = "leanmigratePostgres"
