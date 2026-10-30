@@ -144,7 +144,7 @@ def accountPage (assets : Assets) (address : Option String) (providers : List Au
     (linked : List (Authentication.Credential Todo.tenant)) (passkeys : List HeldPasskey)
     (token : Option String) (notice : Option AccountNotice := none) : String :=
   cardPage assets "Your account"
-    ([ h2 ["Your account"] ]
+    ([ (h2 ["Your account"] : Node .flow) ]
       ++ (match notice with
           | none => []
           | some notice => [(p [noticeText notice] { class_ := "note" } : Node .flow)])
