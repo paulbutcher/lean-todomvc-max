@@ -60,15 +60,14 @@ mail is broken. What is true is that opening the link somewhere else is what pro
 this is a way out of a situation rather than a step on the way, and the fold says as much before
 the wording does. -/
 private def codeAside (context : PageContext) (expanded : Bool := false) : List (Node .flow) :=
-  [ details
-      ([ summary ["I opened the link on another device"],
-         p ["That device shows a short code instead of signing you in there. Type it here to \
-             finish signing in on this one."],
+  [ details (summary ["I opened the link on another device"])
+      ([ (p ["That device shows a short code instead of signing you in there. Type it here to \
+             finish signing in on this one."] : Node .flow),
          codeField context context.action "Code from the other device" "code" ]
         ++ match context.emailedCodeAction with
            | none => []
            | some action =>
-             [ p ["Or use the code in the mail itself."],
+             [ (p ["Or use the code in the mail itself."] : Node .flow),
                codeField context action "Code from the mail" "emailed-code" ])
       { class_ := "aside", open_ := expanded } ]
 
@@ -151,7 +150,7 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
     Authentication.Http.Pages where
   signIn context :=
     cardPage assets s!"Sign in to {context.tenantName}"
-      ([ h2 ["Sign in"],
+      ([ (h2 ["Sign in"] : Node .flow),
         p ["Enter your address and we will mail you a link. There is no password to remember."],
         form
           ([ (Html.label ["Email address"] { for_ := "email" } : Node .flow),
@@ -178,7 +177,7 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
     match message with
     | .checkYourMail =>
       cardPage assets "Check your mail"
-        ([ h2 ["Check your mail"],
+        ([ (h2 ["Check your mail"] : Node .flow),
            p [messageText message],
            p ["Open the link on this device and you are signed in. There is nothing to type."],
            p ["Asking again replaces the link, so only the newest one works, and there is a \
@@ -220,7 +219,7 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
           p [a { href := signInPath } ["Ask for a new link"]] ]
     else
       cardPage assets "That code was not right"
-        ([ h2 ["That code was not right"],
+        ([ (h2 ["That code was not right"] : Node .flow),
            p [if remaining == 1 then
                 "One more attempt before this link stops working."
               else
@@ -285,10 +284,10 @@ def consentPage (assets : Assets) (context : Authentication.OAuth.Http.ConsentCo
            started it."] { class_ := "warn" }]
     else []
   cardPage assets s!"Allow {name}?"
-    ([ h2 [s!"Allow {name}?"],
+    ([ (h2 [s!"Allow {name}?"] : Node .flow),
        p [s!"{name} is asking to use your todo list."] ]
       ++ vouching
-      ++ [p [s!"If you allow it, your answer is sent to {context.redirectHost}."]]
+      ++ [(p [s!"If you allow it, your answer is sent to {context.redirectHost}."] : Node .flow)]
       ++ loopback
       ++ [ form
              ([ (Html.label ["It is asking to:"] : Node .flow),

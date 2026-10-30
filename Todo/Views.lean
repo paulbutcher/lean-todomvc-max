@@ -39,16 +39,16 @@ the better. -/
 def cardPage (assets : Assets) (heading : String) (children : List (Node .flow))
     (scripts : List ScriptAttrs := []) : String :=
   document
-    [ head
-        ([ meta_ [("charset", "utf-8")],
-           meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
-           title heading, link todomvcCss, link assets.authCss, link assets.favicon ]
-          ++ scripts.map (script · [])),
-      body
-        [ section_
-            [ header [h1 ["todos"]] { class_ := "header" },
-              div children { class_ := "auth" } ]
-            { class_ := "todoapp" } ] ]
+    (head (title heading)
+      ([ meta_ [("charset", "utf-8")],
+         meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
+         link todomvcCss, link assets.authCss, link assets.favicon ]
+        ++ scripts.map (script · [])))
+    (body
+      [ section_
+          [ header [h1 ["todos"]] { class_ := "header" },
+            div children { class_ := "auth" } ]
+          { class_ := "todoapp" } ])
     (lang := "en")
 
 /-- A form field carrying something the browser sends back rather than shows, and nothing at all
@@ -217,27 +217,27 @@ def pageView (assets : Assets) (csrfToken : Option String) (address : Option Str
     (messages : Array LLMClient.Msg) (turn : Option TurnState) (items allItems : Array Item)
     (filter : Filter) : String :=
   document
-    [ head
-        [ meta_ [("charset", "utf-8")], title "todos", script htmxScript,
-          script assets.chatScript, link todomvcCss, link assets.chatCss, link assets.favicon ],
-      body
-        [ appShell address messages turn
-            [ section_
-                [ header
-                    [ h1 ["todos"],
-                      Htmx.form
-                        [ input
-                            { name := "title", placeholder := "What needs to be done?",
-                              class_ := "new-todo" }
-                            [("autofocus", "autofocus")] ]
-                        { hxPost := links.todos, hxTarget := "#todo-list-section",
-                          hxSwap := some .outerHTML,
-                          hxOnHtmx := [("after-request", "this.reset()")] } ]
-                    { class_ := "header" },
-                  listSection items (listDigest allItems),
-                  footerFragment allItems filter ]
-                { class_ := "todoapp" } ] ]
-        (rawAttrs := csrfAttrs csrfToken) ]
+    (head (title "todos")
+      [ meta_ [("charset", "utf-8")], script htmxScript, script assets.chatScript,
+        link todomvcCss, link assets.chatCss, link assets.favicon ])
+    (body
+      [ appShell address messages turn
+          [ section_
+              [ header
+                  [ h1 ["todos"],
+                    Htmx.form
+                      [ input
+                          { name := "title", placeholder := "What needs to be done?",
+                            class_ := "new-todo" }
+                          [("autofocus", "autofocus")] ]
+                      { hxPost := links.todos, hxTarget := "#todo-list-section",
+                        hxSwap := some .outerHTML,
+                        hxOnHtmx := [("after-request", "this.reset()")] } ]
+                  { class_ := "header" },
+                listSection items (listDigest allItems),
+                footerFragment allItems filter ]
+              { class_ := "todoapp" } ] ]
+      (rawAttrs := csrfAttrs csrfToken))
     (lang := "en")
 
 end Todo

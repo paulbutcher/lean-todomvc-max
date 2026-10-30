@@ -39,7 +39,7 @@ private def spanning : List (String × String) := presentation ++ [("width", "10
 
 private def rows (style : String) (children : List (Node .tableRow))
     (raw : List (String × String) := spanning) : Node .flow :=
-  table (children.map Node.toTableSection) { style } raw
+  table (.rows children) { style } raw
 
 private def band (style : String) (children : List (Node .flow))
     (raw : List (String × String) := []) : Node .tableRow :=
@@ -109,20 +109,19 @@ private def wordmark : Node .tableRow :=
 it says what the subject leaves out rather than repeating it. -/
 private def wrap (subject preview : String) (content : List (Node .tableRow)) : String :=
   document
-    [ head
-        [ meta_ [("charset", "utf-8")],
-          meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
-          title subject ],
-      body
-        [ div [preview]
-            { style := "display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;\
-                font-size:1px;line-height:1px;" },
-          rows s!"background-color:{page};"
-            [ band "padding:32px 16px;"
-                [ rows "width:100%;max-width:600px;" (wordmark :: content)
-                    (presentation ++ [("width", "600"), ("align", "center")]) ]
-                [("align", "center")] ] ]
-        { style := s!"margin:0;padding:0;background-color:{page};" } ]
+    (head (title subject)
+      [ meta_ [("charset", "utf-8")],
+        meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")] ])
+    (body
+      [ div [preview]
+          { style := "display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;\
+              font-size:1px;line-height:1px;" },
+        rows s!"background-color:{page};"
+          [ band "padding:32px 16px;"
+              [ rows "width:100%;max-width:600px;" (wordmark :: content)
+                  (presentation ++ [("width", "600"), ("align", "center")]) ]
+              [("align", "center")] ] ]
+      { style := s!"margin:0;padding:0;background-color:{page};" })
     (lang := "en")
 
 private def monthNames : Array String :=

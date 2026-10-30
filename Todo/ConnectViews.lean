@@ -134,8 +134,8 @@ def connectPage (assets : Assets) (endpoint : String) (token : Option String)
     | some .alreadyGone =>
       [p ["That one was already disconnected."] { class_ := "note" }]
   cardPage assets "Use your own agent"
-    ([ h2 ["Use your own agent"] ] ++ confirmation ++
-    [ p ["Your own assistant can work on this list too, the same way the one here does."],
+    ([ (h2 ["Use your own agent"] : Node .flow) ] ++ confirmation ++
+    [ (p ["Your own assistant can work on this list too, the same way the one here does."] : Node .flow),
       p ["Assistants differ in where that setting lives, and they move it, so rather than \
           guess at yours: copy this and paste it to your assistant, and let it tell you."],
       Html.label ["Paste this to your assistant"] { for_ := "agent-prompt" },
@@ -152,9 +152,8 @@ def connectPage (assets : Assets) (endpoint : String) (token : Option String)
       ul (Todo.Authorization.scopes.map scopeLine),
       p ["You choose, when it asks. Either one can be refused, and an assistant that is given \
           only the first can read the list and not change it."],
-      details
-        [ summary ["If your assistant cannot do it"],
-          p ["Not every assistant can reach an MCP server, and some can only on a paid plan. \
+      details (summary ["If your assistant cannot do it"])
+        [ p ["Not every assistant can reach an MCP server, and some can only on a paid plan. \
               An assistant that asks you for the address directly wants this one:"],
           p [code [endpoint]] { class_ := "endpoint" },
           p ["It needs no key beside it. Anything else it asks for, it will find for itself \
