@@ -67,7 +67,7 @@ private def connectionRow (token : Option String)
     [ p [strong [name]],
       vouching connection,
       p ["It can:"],
-      ul (connection.scopes.map scopeLine),
+      ul (connection.scopes.map (scopeLine ·)),
       p [s!"Last used {AuthMail.inWords connection.lastUsedAt}."] { class_ := "note" },
       form
         (Todo.hidden Middleware.defaultAntiForgeryParamName token
@@ -90,7 +90,7 @@ private def connectionsSection (token : Option String)
   else
     [ div
         [ Html.label ["Assistants you have connected"],
-          ul (connections.map (connectionRow token)) { class_ := "connections" } ]
+          ul (connections.map (connectionRow token ·)) { class_ := "connections" } ]
         { class_ := "withdraw" } ]
 
 /-- Withdrawing every approval at once.
@@ -149,7 +149,7 @@ def connectPage (assets : Assets) (endpoint : String) (token : Option String)
       p ["Nothing in it is secret, so it is safe to paste anywhere you would paste a web \
           address."] { class_ := "note" },
       Html.label ["What it will ask for"],
-      ul (Todo.Authorization.scopes.map scopeLine),
+      ul (Todo.Authorization.scopes.map (scopeLine ·)),
       p ["You choose, when it asks. Either one can be refused, and an assistant that is given \
           only the first can read the list and not change it."],
       details (summary ["If your assistant cannot do it"])

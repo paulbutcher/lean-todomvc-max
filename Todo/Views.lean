@@ -40,10 +40,10 @@ def cardPage (assets : Assets) (heading : String) (children : List (Node .flow))
     (scripts : List ScriptAttrs := []) : String :=
   document
     (head (title heading)
-      ([ meta_ [("charset", "utf-8")],
-         meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
-         link todomvcCss, link assets.authCss, link assets.favicon ]
-        ++ scripts.map (script · [])))
+      (([ meta_ [("charset", "utf-8")],
+          meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")],
+          link todomvcCss, link assets.authCss, link assets.favicon ] : List (Node .metadata))
+        ++ scripts.map fun s => (script s : Node .metadata)))
     (body
       [ section_
           [ header [h1 ["todos"]] { class_ := "header" },
@@ -150,7 +150,7 @@ def listSection (items : Array Item) (digest : String) (oob : Bool := false) : N
           class_ := "toggle-all", hxPost := links.toggleAll,
           hxTarget := "#todo-list-section", hxSwap := some .outerHTML },
       label [] { for_ := "toggle-all" },
-      ul (items.toList.map itemView) { class_ := "todo-list" },
+      ul (items.toList.map (itemView ·)) { class_ := "todo-list" },
       listWatcher digest ]
     { id := "todo-list-section", class_ := "main",
       hxSwapOob := if oob then some "true" else none }
