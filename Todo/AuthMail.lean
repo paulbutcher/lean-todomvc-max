@@ -39,7 +39,7 @@ private def spanning : List (String × String) := presentation ++ [("width", "10
 
 private def rows (style : String) (children : List (Node .tableRow))
     (raw : List (String × String) := spanning) : Node .flow :=
-  table (.rows children) { style } raw
+  table (children : TableBody) { style } raw
 
 private def band (style : String) (children : List (Node .flow))
     (raw : List (String × String) := []) : Node .tableRow :=

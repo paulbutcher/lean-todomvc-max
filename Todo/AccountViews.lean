@@ -155,11 +155,11 @@ def accountPage (assets : Assets) (address : Option String) (providers : List Au
             [ (p ["As well as the link we mail you, you can sign in with any of these. \
                    Connecting one here is the only way to use a provider that hides your \
                    address, because there is then no address for us to match on."] : Node .flow),
-              (ul (providers.map (providerRow linked token)) { class_ := "providers" }
+              (ul (providers.map (providerRow linked token ·)) { class_ := "providers" }
                 : Node .flow) ])
       ++ (if passkeys.isEmpty then [] else
             [ (Html.label ["Your passkeys"] : Node .flow),
-              (ul (passkeys.map (passkeyRow token)) { class_ := "providers passkeys" }
+              (ul (passkeys.map (passkeyRow token ·)) { class_ := "providers passkeys" }
                 : Node .flow) ])
       ++ [addPasskey, (p [a { href := links.index } ["Back to your todos"]] : Node .flow)])
     [assets.passkeyScript]
