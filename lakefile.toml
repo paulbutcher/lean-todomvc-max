@@ -30,7 +30,7 @@ rev = "v0.14.0"
 [[require]]
 name = "markdown"
 git = "https://github.com/paulbutcher/lean-markdown"
-rev = "v0.8.3"
+rev = "v0.9.0"
 
 [[require]]
 name = "LLMClient"
