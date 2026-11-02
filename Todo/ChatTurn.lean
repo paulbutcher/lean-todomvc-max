@@ -27,7 +27,7 @@ expire, and the deployed function is handed fresh ones in its environment rather
 restarted. Building it per turn is the same reasoning as `Todo.Auth.refreshing`; holding one
 built at startup is the mistake that works all day and then stops. -/
 structure Assistant where
-  provider : IO Provider
+  provider : IO (Provider IO)
   chat : ChatStore
   turns : Turns
 
@@ -64,7 +64,7 @@ because an execution role's credentials are rotated underneath a running process
 `BEDROCK_MODEL` names the model, and defaults to whatever `LLMClient` considers current. Which
 models an account may call, and under which id, differs by region and by what has been enabled
 in it, so this is not something the application can settle for itself. -/
-def bedrockProvider (fresh : IO Aws.Sigv4.Credentials) (region : String) : IO Provider := do
+def bedrockProvider (fresh : IO Aws.Sigv4.Credentials) (region : String) : IO (Provider IO) := do
   let defaults := defaultConfig region
   -- An empty variable is an unset one: the deployment template always sets it, and its default
   -- is the empty string.
@@ -106,8 +106,8 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
     TelemetryT IO Unit :=
   spanning "chat turn" do
     -- The turn's own span, not the request's: everything below outlives the request, and the
-    -- tools reach their entry through `converseLoop`, which fixes `IO` and so has nowhere
-    -- for a context to travel implicitly.
+    -- tools reach their entry through `converseLoop`, which runs in the provider's `IO` and so
+    -- has nowhere for a context to travel implicitly.
     let parent ← currentSpan
     try
       let history ← Async.block ((assistant.chat.history account).run parent)
@@ -121,10 +121,10 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
       -- that refreshed on the announcement would read the list back as it was a moment earlier
       -- and show the change as not having happened. A call that failed is not counted, because
       -- every refusal `ChatTools` reports is decided before the store is reached.
-      -- `converseLoop` fixes `IO`, which the tools are not written in, so the blocking happens
-      -- here rather than in `ChatTools`. This turn has a thread to itself, so waiting on it
-      -- costs nothing that is not already being waited on, and `parent` is what keeps the spans
-      -- the store opens underneath the turn's own rather than loose at the root.
+      -- `converseLoop` runs in the provider's `IO`, which the tools are not written in, so the
+      -- blocking happens here rather than in `ChatTools`. This turn has a thread to itself, so
+      -- waiting on it costs nothing that is not already being waited on, and `parent` is what
+      -- keeps the spans the store opens underneath the turn's own rather than loose at the root.
       let tools := ChatTools.registry.map fun entry =>
         let count (ok : Bool) : IO Unit :=
           if entry.mutates && ok then
@@ -141,7 +141,8 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
             let result ← Async.block ((structured.run store account input).run parent)
             count result.isOk
             pure result }
-      let result ← LLMClient.converseLoop provider tools history { maxIterations, onProgress }
+      let result ←
+        (LLMClient.converseLoop provider tools history { maxIterations, onProgress } : IO _)
       match result with
       | .error failure =>
         -- A turn can fail after its tools have run, and those calls have already changed the

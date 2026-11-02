@@ -292,7 +292,7 @@ once the script runs out rather than repeating its last line.
 still running: resolving it is the only thing that lets the turn finish, so "before" and "after"
 are positions a test can actually stand in rather than durations it has to guess at. -/
 def scriptedProvider (replies : Array LLMClient.Reply) (gate : Option (IO.Promise Unit) := none) :
-    IO LLMClient.Provider := do
+    IO (LLMClient.Provider IO) := do
   let remaining ← IO.mkRef replies
   pure {
     name := "scripted"
