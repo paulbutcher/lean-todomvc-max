@@ -27,7 +27,7 @@ expire, and the deployed function is handed fresh ones in its environment rather
 restarted. Building it per turn is the same reasoning as `Todo.Auth.refreshing`; holding one
 built at startup is the mistake that works all day and then stops. -/
 structure Assistant where
-  provider : IO Provider
+  provider : IO (Provider IO)
   chat : ChatStore
   turns : Turns
 
@@ -64,7 +64,7 @@ because an execution role's credentials are rotated underneath a running process
 `BEDROCK_MODEL` names the model, and defaults to whatever `LLMClient` considers current. Which
 models an account may call, and under which id, differs by region and by what has been enabled
 in it, so this is not something the application can settle for itself. -/
-def bedrockProvider (fresh : IO Aws.Sigv4.Credentials) (region : String) : IO Provider := do
+def bedrockProvider (fresh : IO Aws.Sigv4.Credentials) (region : String) : IO (Provider IO) := do
   let defaults := defaultConfig region
   -- An empty variable is an unset one: the deployment template always sets it, and its default
   -- is the empty string.
@@ -80,17 +80,22 @@ the next prompt would sit against it as a second user turn and be refused. -/
 def unfinishedNote : String :=
   "(This turn stopped before I could reply. Any tools listed above did run.)"
 
+/-- Waits on a store operation from a turn's own thread. That thread exists only to run the turn,
+so waiting on it costs nothing that is not already being waited on. -/
+private def blocking (act : TelemetryT Async α) : TelemetryT IO α :=
+  fun context => Async.block (act.run context)
+
 /-- Stores whatever a failed turn got through before it failed, and closes it off.
 
 `stored` is what was already in the transcript and `reached` is what `converseLoop` had
 accumulated when it gave up; only the difference is new. Nothing is written when they are the
 same length, which is a turn that failed on its first request with no tool having run: there is
 no reply to explain the absence of, and a note on its own would be noise. -/
-def recordUnfinished (assistant : Assistant) (account : Account) (parent : Option SpanContext)
-    (stored reached : Array Msg) : IO Unit := do
+def recordUnfinished (assistant : Assistant) (account : Account) (stored reached : Array Msg) :
+    TelemetryT IO Unit := do
   if reached.size > stored.size then
     let added := (reached.extract stored.size reached.size).push (.assistant unfinishedNote)
-    Async.block ((assistant.chat.append account added).run parent)
+    blocking (assistant.chat.append account added)
 
 /-- Runs one turn to completion and records what came of it, having been started by a request
 that has already answered and gone.
@@ -105,14 +110,12 @@ would otherwise see a turn that simply stopped. -/
 def runTurn (assistant : Assistant) (store : Store) (account : Account) :
     TelemetryT IO Unit :=
   spanning "chat turn" do
-    -- The turn's own span, not the request's: everything below outlives the request, and the
-    -- tools reach their entry through `converseLoop`, which fixes `IO` and so has nowhere
-    -- for a context to travel implicitly.
-    let parent ← currentSpan
     try
-      let history ← Async.block ((assistant.chat.history account).run parent)
-      let provider ← assistant.provider
-      let onProgress : LLMClient.Progress → IO Unit
+      let history ← blocking (assistant.chat.history account)
+      let curl ← assistant.provider
+      let provider : Provider (TelemetryT IO) :=
+        { name := curl.name, sendRequest := fun history tools => curl.sendRequest history tools }
+      let onProgress : LLMClient.Progress → TelemetryT IO Unit
         | .thinking => assistant.turns.advance account ({ · with phase := .thinking })
         | .runningTool name =>
           assistant.turns.advance account fun state =>
@@ -121,39 +124,33 @@ def runTurn (assistant : Assistant) (store : Store) (account : Account) :
       -- that refreshed on the announcement would read the list back as it was a moment earlier
       -- and show the change as not having happened. A call that failed is not counted, because
       -- every refusal `ChatTools` reports is decided before the store is reached.
-      -- `converseLoop` fixes `IO`, which the tools are not written in, so the blocking happens
-      -- here rather than in `ChatTools`. This turn has a thread to itself, so waiting on it
-      -- costs nothing that is not already being waited on, and `parent` is what keeps the spans
-      -- the store opens underneath the turn's own rather than loose at the root.
       let tools := ChatTools.registry.map fun entry =>
-        let count (ok : Bool) : IO Unit :=
+        let count (ok : Bool) : TelemetryT IO Unit :=
           if entry.mutates && ok then
             assistant.turns.advance account fun state =>
               { state with mutations := state.mutations + 1 }
           else pure ()
         { tool := entry.tool
           run := fun input => do
-            let result ← Async.block ((entry.run store account input).run parent)
+            let result ← blocking (entry.run store account input)
             count result.isOk
             pure result
           -- `converseLoop` runs this instead of `run` where it is set, so a call is counted once.
           runStructured := entry.structured.map fun structured => fun input => do
-            let result ← Async.block ((structured.run store account input).run parent)
+            let result ← blocking (structured.run store account input)
             count result.isOk
             pure result }
-      let result ← LLMClient.converseLoop provider tools history { maxIterations, onProgress }
-      match result with
+      match ← LLMClient.converseLoop provider tools history { maxIterations, onProgress } with
       | .error failure =>
         -- A turn can fail after its tools have run, and those calls have already changed the
         -- list. Storing what happened is what keeps the transcript honest about it; the
         -- alternative is a conversation that never mentions the deletion it performed.
-        recordUnfinished assistant account parent history failure.history
+        recordUnfinished assistant account history failure.history
         assistant.turns.fail account failure.message
       | .ok (updated, _) =>
         -- Everything `converseLoop` added: what the model said, and a result per tool it called.
         -- The prefix is the history it was handed, which is already stored.
-        Async.block
-          ((assistant.chat.append account (updated.extract history.size updated.size)).run parent)
+        blocking (assistant.chat.append account (updated.extract history.size updated.size))
         assistant.turns.finish account
     catch error =>
       assistant.turns.fail account (toString error)
