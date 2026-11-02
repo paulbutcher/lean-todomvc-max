@@ -18,66 +18,7 @@ open Telemetry (TelemetryT)
 
 namespace Todo
 
-open LLMClient (Block Msg ToolCall)
-
-/-! ## A message as a row -/
-
-/-- `LLMClient.Msg` spread over the columns a table can hold it in. The alternative, one JSON
-document per row, would put the discriminator inside a blob and so out of reach of a query.
-
-`toolCalls` is `Json` rather than the text a column stores, so that `toMsg_ofMsg` below holds
-outright. Text costs the round trip its unconditionality: what a model sends as a tool's input is
-arbitrary JSON, free to nest deeper or carry longer numbers than a reader admits. -/
-structure ChatRow where
-  role : String
-  body : String
-  toolCalls : Json
-  toolCallId : String
-  isError : Bool
-
-def toolCallJson (call : ToolCall) : Json :=
-  Json.mkObj [("id", call.id), ("name", call.name), ("input", call.input)]
-
-/-- An element that is not an object with `id` and `name` was not written by `toolCallJson`, and
-there is nothing to call. Dropping it keeps the surrounding transcript readable, which discarding
-the whole history would not. -/
-def toolCallOfJson (j : Json) : Option ToolCall :=
-  match j.getObjVal? "id" >>= Json.getStr?, j.getObjVal? "name" >>= Json.getStr? with
-  | .ok id, .ok name =>
-    some { id, name, input := (j.getObjVal? "input").toOption.getD (Json.mkObj []) }
-  | _, _ => none
-
-def toolCallsJson (calls : Array ToolCall) : Json := Json.arr (calls.map toolCallJson)
-
-def toolCallsOfJson (j : Json) : Array ToolCall :=
-  match j.getArr? with
-  | .ok elems => elems.filterMap toolCallOfJson
-  | .error _ => #[]
-
-/-- An assistant turn as a row reads it back: its prose, then its calls. Thinking blocks are not
-stored, because a provider needs them only within the turn that produced them, and a replayed turn
-is one that has already finished. -/
-def assistantBlocks (text : String) (calls : Array ToolCall) : Array Block :=
-  (if text.isEmpty then #[] else #[.text text]) ++ calls.map .toolCall
-
-def ChatRow.ofMsg : Msg → ChatRow
-  | .user text =>
-    { role := "user", body := text, toolCalls := Json.arr #[], toolCallId := "", isError := false }
-  | .assistant content =>
-    { role := "assistant", body := Block.joinText content,
-      toolCalls := toolCallsJson (Block.toolCalls content), toolCallId := "", isError := false }
-  -- A structured result is not stored: `output` is the same answer, and a replayed turn is one
-  -- the model has already been told the answer to.
-  | .toolResult id output isError _ =>
-    { role := "tool", body := output, toolCalls := Json.arr #[], toolCallId := id, isError }
-
-/-- A role outside the three `ofMsg` writes is read as a user turn. Refusing it instead would
-make one unrecognised row hide the whole conversation behind it. -/
-def ChatRow.toMsg (row : ChatRow) : Msg :=
-  if row.role == "assistant" then
-    .assistant (assistantBlocks row.body (toolCallsOfJson row.toolCalls))
-  else if row.role == "tool" then .toolResult row.toolCallId row.body row.isError
-  else .user row.body
+open LLMClient (Msg)
 
 /-! ## Storage -/
 

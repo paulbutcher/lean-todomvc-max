@@ -134,38 +134,73 @@ private def testConcurrentWrites (db : Conn) (schema : String) : IO Unit :=
     checkEq "every overlapping write landed exactly once" writes
       (← Async.block (runTelemetry (store.list alice .all))).size
 
-/-- A message as something a failure can be reported through, since `LLMClient.Msg` has no `Repr`.
-Every field the table holds is in here, so a column read back into the wrong one shows up. -/
-private def shapeOf : LLMClient.Msg → String × String × String × Bool
-  | .user text => ("user", text, "", false)
-  | .assistant content =>
-    ("assistant", LLMClient.Block.joinText content,
-      Json.compress (toolCallsJson (LLMClient.Block.toolCalls content)), false)
-  | .toolResult id output isError _ => ("tool", output, id, isError)
+/-- Messages as something a failure can be reported through, since `LLMClient.Msg` has no `Repr`.
+The encoding is the one the table holds, so every field of every block is compared. -/
+private def encoded (msgs : Array LLMClient.Msg) : Array String :=
+  msgs.map (Json.compress ·.toJson)
 
-/-- The transcript survives the trip through the columns it is kept in, tool calls and all. A
-failed call is among them: it is the one message whose meaning is carried by something other than
-its text, and a column that came back false would turn it into an ordinary result.
-`toMsg_ofMsg` settles the encoding itself; this is the half of the round trip that theorem
-deliberately does not reach, where the model's arbitrary JSON becomes column text and back, and
-where `Postgres.Row` matches fields to columns by position rather than by name. -/
+private def historyOf (db : Conn) (account : Account) : IO (Array String) := do
+  let rows ← Db.chatRows db account
+  pure (encoded (← Async.block (runTelemetry (Db.decodeHistory rows))))
+
+private def sampleCall : LLMClient.ToolCall :=
+  { id := "call-1", name := "add_todo"
+    input := Json.mkObj [("title", "buy milk"), ("urgent", true)] }
+
+/-- The transcript survives the trip through the table, every block of it. A thinking block is
+among them, because it is what only a whole message keeps, and so is a failed call: a flag that
+came back false would turn it into an ordinary result. A row that does not decode costs only
+itself. -/
 private def testChatMessagesSurviveTheTable (db : Conn) : IO Unit := do
   execScript db "TRUNCATE chat_messages RESTART IDENTITY"
-  let call : LLMClient.ToolCall :=
-    { id := "call-1", name := "add_todo"
-      input := Json.mkObj [("title", "buy milk"), ("urgent", true)] }
   let written : Array LLMClient.Msg :=
-    #[.user "add buy milk", .assistant #[.text "Adding it.", .toolCall call],
-      .toolResult "call-1" "added", .toolResult "call-2" "that title is blank, so nothing was added" true]
+    #[.user "add buy milk",
+      .assistant #[.thinking "they want milk" "sig", .toolCall sampleCall, .text "Adding it."],
+      .toolResult "call-1" "added" (structured := some (Json.mkObj [("id", Json.ofNat 1)])),
+      .toolResult "call-2" "that title is blank, so nothing was added" true]
   Db.chatAppend db alice written
   Db.chatAppend db bob #[.user "somebody else's"]
-  checkEq "read back in the order they were written, unaltered" (written.map shapeOf)
-    ((← Db.chatHistory db alice).map shapeOf)
+  checkEq "read back in the order they were written, unaltered" (encoded written)
+    (← historyOf db alice)
   checkEq "and one account's conversation is not another's"
-    #[("user", "somebody else's", "", false)] ((← Db.chatHistory db bob).map shapeOf)
+    (encoded #[.user "somebody else's"]) (← historyOf db bob)
+  let owner := alice.value
+  let undecodable := Json.compress (Json.mkObj [("role", Json.ofNat 1)])
+  db exec!"INSERT INTO chat_messages (account_id, message) VALUES ({owner}, {undecodable})"
+  Db.chatAppend db alice #[.user "after it"]
+  checkEq "a row that does not decode is skipped, and nothing around it"
+    (encoded (written.push (.user "after it"))) (← historyOf db alice)
   Db.chatClear db alice
-  checkEq "clearing forgets one account's" 0 (← Db.chatHistory db alice).size
-  checkEq "and leaves the other's" 1 (← Db.chatHistory db bob).size
+  checkEq "clearing forgets one account's" #[] (← historyOf db alice)
+  checkEq "and leaves the other's" 1 (← historyOf db bob).size
+
+/-- A conversation stored one column per field is converted the way the application used to read
+it back, and survives being rolled back and converted again. The SQL does the conversion, so only
+running it can show it right: an unknown role is a user turn, unreadable tool calls are none, and a
+tool's input keeps its own text rather than being normalised. -/
+private def testChatMigrationConvertsStoredConversations (db : Conn) : IO Unit := do
+  let migrations ← discoverAllMigrations Todo.migrationsDir Todo.includedMigrationsDirs
+  let some toJson := migrations.find? (·.id == "20261102120000")
+    | throw (IO.userError "the migration to JSON messages is missing")
+  execScript db "TRUNCATE chat_messages RESTART IDENTITY"
+  rollbackOne db toJson
+  let owner := alice.value
+  let toolCalls := Json.compress (Json.arr #[Json.mkObj
+    [("id", sampleCall.id), ("name", sampleCall.name), ("input", sampleCall.input)]])
+  db exec!"INSERT INTO chat_messages (account_id, role, body, tool_calls, tool_call_id, is_error)
+             VALUES ({owner}, 'user', 'add buy milk', '[]', '', FALSE),
+                    ({owner}, 'assistant', 'Adding it.', {toolCalls}, '', FALSE),
+                    ({owner}, 'tool', 'added', '[]', 'call-1', TRUE),
+                    ({owner}, 'assistant', '', 'not json', '', FALSE),
+                    ({owner}, 'narrator', 'odd', '[]', '', FALSE)"
+  Todo.migrate db
+  let expected := encoded
+    #[.user "add buy milk", .assistant #[.text "Adding it.", .toolCall sampleCall],
+      .toolResult "call-1" "added" true, .assistant #[], .user "odd"]
+  checkEq "each row becomes the message it was read as" expected (← historyOf db alice)
+  rollbackOne db toJson
+  Todo.migrate db
+  checkEq "and comes back the same after a rollback" expected (← historyOf db alice)
 
 /-- The authentication library's own suite, against the schema `Todo.migrate` built rather than
 the one the library would create for itself, and through the store `Todo.Auth.ports` builds. What
@@ -189,6 +224,7 @@ def runDbTests : IO Unit :=
     testListFiltersAndClearCompleted db
     testStatementsAreScopedToTheAccount db
     testChatMessagesSurviveTheTable db
+    testChatMigrationConvertsStoredConversations db
     testConcurrentWrites db schema
     testAuthenticationStoreConforms
 

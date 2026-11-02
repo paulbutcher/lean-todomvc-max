@@ -106,39 +106,35 @@ def store (pool : Pool) : Store where
 
 /-! ## The chat transcript -/
 
-/-- The columns as `SELECT` below reads them, which is what `Postgres.Row` derives against. It
-carries `tool_calls` as the text a column holds; `Todo.ChatRow` is the same message once that text
-has been read as JSON, and `toMsg_ofMsg` is stated over that rather than this. -/
-private structure ChatMessageRow where
-  role : String
-  body : String
-  toolCalls : String
-  toolCallId : String
-  isError : Bool
+/-- A message as the table holds it: `LLMClient`'s own JSON encoding, still as text. -/
+structure ChatMessageRow where
+  id : Int64
+  message : String
 deriving Postgres.Row
 
-/-- Unparseable `tool_calls` is read as no tool calls rather than as a reason to refuse the whole
-transcript. Only this module writes the column, and it writes what `Json.compress` produced, so
-the case is one a corrupted or hand-edited row reaches; losing what the model asked for is worse
-for the person reading than losing the conversation around it. -/
-def chatHistory (db : Conn) (account : Account) : IO (Array LLMClient.Msg) := do
+def chatRows (db : Conn) (account : Account) : IO (Array ChatMessageRow) := do
   let owner := account.value
-  let stmt ← db sql!"SELECT role, body, tool_calls, tool_call_id, is_error FROM chat_messages
-                       WHERE account_id = {owner} ORDER BY id"
-  let rows : Array ChatMessageRow ← stmt.results.toArray
-  pure <| rows.map fun row =>
-    ChatRow.toMsg
-      { role := row.role, body := row.body, toolCallId := row.toolCallId, isError := row.isError
-        toolCalls := (Json.parse row.toolCalls).toOption.getD (Json.arr #[]) }
+  let stmt ← db sql!"SELECT id, message FROM chat_messages WHERE account_id = {owner} ORDER BY id"
+  stmt.results.toArray
+
+/-- A row that does not decode is dropped rather than taken as a reason to refuse the whole
+transcript: only this module writes the column, so the case is one a corrupted or hand-edited row
+reaches, and losing one message is better for the person reading than losing the conversation
+around it. Decoded here rather than inside the borrow so that the warning sits under the span. -/
+def decodeHistory (rows : Array ChatMessageRow) : TelemetryT Async (Array LLMClient.Msg) :=
+  rows.filterMapM fun row => do
+    match (Json.parse row.message).mapError toString >>= LLMClient.Msg.fromJson? with
+    | .ok msg => pure (some msg)
+    | .error reason =>
+      Telemetry.warn "chat message dropped"
+        [("chat.message_id", .str (toString row.id)), ("chat.decode_error", .str reason)]
+      pure none
 
 def chatAppend (db : Conn) (account : Account) (msgs : Array LLMClient.Msg) : IO Unit := do
   let owner := account.value
   for msg in msgs do
-    let row := ChatRow.ofMsg msg
-    let toolCalls := Json.compress row.toolCalls
-    db exec!"INSERT INTO chat_messages (account_id, role, body, tool_calls, tool_call_id, is_error)
-               VALUES ({owner}, {row.role}, {row.body}, {toolCalls}, {row.toolCallId},
-                       {row.isError})"
+    let message := Json.compress msg.toJson
+    db exec!"INSERT INTO chat_messages (account_id, message) VALUES ({owner}, {message})"
 
 def chatClear (db : Conn) (account : Account) : IO Unit :=
   let owner := account.value
@@ -148,7 +144,8 @@ def chatClear (db : Conn) (account : Account) : IO Unit :=
 in one order and read back in it, and a reader that caught the middle of the write would see the
 model's reply without the tool results it was drawn from. -/
 def chatStore (pool : Pool) : ChatStore where
-  history account := spanned pool "SELECT" "chat_messages" (chatHistory · account)
+  history account := do
+    decodeHistory (← spanned pool "SELECT" "chat_messages" (chatRows · account))
   append account msgs := spanned pool "INSERT" "chat_messages" (chatAppend · account msgs)
   clear account := spanned pool "DELETE" "chat_messages" (chatClear · account)
 
