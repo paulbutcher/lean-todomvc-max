@@ -138,7 +138,9 @@ private def testConcurrentWrites (db : Conn) (schema : String) : IO Unit :=
 Every field the table holds is in here, so a column read back into the wrong one shows up. -/
 private def shapeOf : LLMClient.Msg → String × String × String × Bool
   | .user text => ("user", text, "", false)
-  | .assistant text calls => ("assistant", text, Json.compress (toolCallsJson calls), false)
+  | .assistant content =>
+    ("assistant", LLMClient.Block.joinText content,
+      Json.compress (toolCallsJson (LLMClient.Block.toolCalls content)), false)
   | .toolResult id output isError _ => ("tool", output, id, isError)
 
 /-- The transcript survives the trip through the columns it is kept in, tool calls and all. A
@@ -153,8 +155,8 @@ private def testChatMessagesSurviveTheTable (db : Conn) : IO Unit := do
     { id := "call-1", name := "add_todo"
       input := Json.mkObj [("title", "buy milk"), ("urgent", true)] }
   let written : Array LLMClient.Msg :=
-    #[.user "add buy milk", .assistant "Adding it." #[call], .toolResult "call-1" "added",
-      .toolResult "call-2" "that title is blank, so nothing was added" true]
+    #[.user "add buy milk", .assistant #[.text "Adding it.", .toolCall call],
+      .toolResult "call-1" "added", .toolResult "call-2" "that title is blank, so nothing was added" true]
   Db.chatAppend db alice written
   Db.chatAppend db bob #[.user "somebody else's"]
   checkEq "read back in the order they were written, unaltered" (written.map shapeOf)

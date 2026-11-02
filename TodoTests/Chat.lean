@@ -19,7 +19,7 @@ open Std.Async (Async)
 open Std.Http.Internal.Test
 open Telemetry (runTelemetry)
 open Routes
-open LLMClient (Msg ToolCall)
+open LLMClient (Block Msg ToolCall)
 
 /-- A tool call stored in a chat row is read back as the call that was stored. The id is the part
 with no tolerance at all: it is what a later tool result is matched against, so a call whose id
@@ -51,6 +51,8 @@ theorem toolCallsOfJson_toolCallsJson (calls : Array ToolCall) :
 /-- A message as the table can hold it: the structured half of a tool result is cleared, because
 no column keeps it. -/
 def stored : Msg → Msg
+  | .assistant content =>
+    .assistant (assistantBlocks (Block.joinText content) (Block.toolCalls content))
   | .toolResult id output isError _ => .toolResult id output isError none
   | msg => msg
 
@@ -59,14 +61,16 @@ model in full on every turn, so a message that comes back altered is not a displ
 changes what the model is answering.
 
 `ChatRow.ofMsg msg` spreads a message over the columns the table holds it in and `.toMsg` reads
-those columns back, so `= stored msg` says the pair is a round trip for every `Msg` up to the one
-field no column holds: each of the three constructors is recovered from the role written for it,
-and the body, tool calls, tool-call id and error flag come back as they went in. `stored` clears
-a tool result's structured payload and changes nothing else, so the weakening reaches that field
-alone; it costs nothing, since `output` is that same answer as text and a replayed turn is one
-whose answer the model has already been given. The claim is one-sided by design. It says nothing
-about a row this application did not write, which is the case `toMsg` deliberately admits by
-reading an unrecognised role as a user turn. -/
+those columns back, so `= stored msg` says the pair is a round trip for every `Msg` up to what no
+column holds: each of the three constructors is recovered from the role written for it, and the
+body, tool calls, tool-call id and error flag come back as they went in. `stored` clears a tool
+result's structured payload, and reduces an assistant turn to its joined prose followed by its
+calls, dropping thinking blocks; it changes nothing else. Neither costs anything: `output` is that
+same answer as text, and a replayed turn is one whose answer the model has already been given and
+whose reasoning no provider asks to see again once the turn has ended. That last rests on the
+providers' documentation, not on anything proven here. The claim is one-sided by design. It says
+nothing about a row this application did not write, which is the case `toMsg` deliberately admits
+by reading an unrecognised role as a user turn. -/
 theorem toMsg_ofMsg (msg : Msg) : (ChatRow.ofMsg msg).toMsg = stored msg := by
   cases msg <;> simp [ChatRow.ofMsg, ChatRow.toMsg, stored, toolCallsOfJson_toolCallsJson]
 
@@ -209,7 +213,7 @@ private def transcriptOf (assistant : Assistant) (account : Account := alice) :
   let history ← Async.block (runTelemetry (assistant.chat.history account))
   pure <| history.map fun
     | .user text => ("user", text)
-    | .assistant text _ => ("assistant", text)
+    | .assistant content => ("assistant", LLMClient.Block.joinText content)
     | .toolResult id .. => ("tool", id)
 
 private def sendPrompt (browser : Middleware.Test.Browser) (prompt : String) : IO ByteArray :=
@@ -223,7 +227,8 @@ is what makes "before" a place a test can stand, since it holds the turn open un
 thread from outliving the test even when an assertion inside fails. -/
 private def testAPromptIsShownBeforeTheModelReplies : IO Unit := do
   let gate ← IO.Promise.new
-  let assistant ← scriptedAssistant #[{ text := "Two todos are left." }] (gate := some gate)
+  let assistant ←
+    scriptedAssistant #[{ content := #[.text "Two todos are left."] }] (gate := some gate)
   let store ← memoryStore alice #[alpha]
   let browser ← panelOf assistant store
   whileHeld gate do
@@ -238,8 +243,9 @@ private def testAPromptIsShownBeforeTheModelReplies : IO Unit := do
 put a question into the transcript that nothing is going to answer. -/
 private def testASecondPromptDuringATurnIsDropped : IO Unit := do
   let gate ← IO.Promise.new
-  let assistant ← scriptedAssistant #[{ text := "first" }, { text := "second" }]
-    (gate := some gate)
+  let assistant ←
+    scriptedAssistant #[{ content := #[.text "first"] }, { content := #[.text "second"] }]
+      (gate := some gate)
   let store ← memoryStore alice #[]
   let browser ← panelOf assistant store
   whileHeld gate do
@@ -260,7 +266,7 @@ private def testABlankPromptStartsNothing : IO Unit := do
 
 /-- Clearing forgets the conversation, so the next prompt is not answered against it. -/
 private def testResetForgetsTheConversation : IO Unit := do
-  let assistant ← scriptedAssistant #[{ text := "hello" }]
+  let assistant ← scriptedAssistant #[{ content := #[.text "hello"] }]
   let store ← memoryStore alice #[]
   let browser ← panelOf assistant store
   discard <| sendPrompt browser "hello there"
@@ -273,7 +279,7 @@ panel a turn is over, so a fragment that arrived with the reply and kept its tri
 for ever, and one that dropped the trigger early would leave the reply unfetched. -/
 private def testAFinishedTurnStopsThePolling : IO Unit := do
   let gate ← IO.Promise.new
-  let assistant ← scriptedAssistant #[{ text := "All done." }] (gate := some gate)
+  let assistant ← scriptedAssistant #[{ content := #[.text "All done."] }] (gate := some gate)
   let store ← memoryStore alice #[]
   let browser ← panelOf assistant store
   whileHeld gate do
@@ -306,8 +312,8 @@ The script holds one reply, so the tool call is answered and the request carryin
 finds nothing left to say and fails. That is the shape of the real failure. -/
 private def testAFailedTurnStillRecordsWhatItsToolsDid : IO Unit := do
   let assistant ← scriptedAssistant
-    #[{ text := "", toolCalls := #[{ id := "call_1", name := "add_todo",
-                                     input := Json.mkObj [("title", "gamma")] }] }]
+    #[{ content := #[.toolCall { id := "call_1", name := "add_todo",
+                                 input := Json.mkObj [("title", "gamma")] }] }]
   let store ← memoryStore alice #[]
   discard <| sendPrompt (← panelOf assistant store) "add gamma"
   awaitTurn assistant.turns alice "the turn that fails after its tool ran"
@@ -326,8 +332,8 @@ Neither script holds a reply after the tool call, so both turns fail, which is w
 count behind to be read: a turn that finished would have erased it. -/
 private def testOnlyToolsThatChangedSomethingAreCounted : IO Unit := do
   let calling (title : String) : Array LLMClient.Reply :=
-    #[{ text := "", toolCalls := #[{ id := "call_1", name := "add_todo",
-                                     input := Json.mkObj [("title", title)] }] }]
+    #[{ content := #[.toolCall { id := "call_1", name := "add_todo",
+                                 input := Json.mkObj [("title", title)] }] }]
   let countAfter (title : String) : IO (Option Nat) := do
     let assistant ← scriptedAssistant (calling title)
     let store ← memoryStore alice #[]
@@ -355,9 +361,9 @@ reply, never its argument or its result, so the only way that title can appear i
 in a freshly rendered list. -/
 private def testAToolChangeReachesTheTodoList : IO Unit := do
   let assistant ← scriptedAssistant
-    #[{ text := "", toolCalls := #[{ id := "call_1", name := "add_todo",
-                                     input := Json.mkObj [("title", "gamma")] }] },
-      { text := "Added it." }]
+    #[{ content := #[.toolCall { id := "call_1", name := "add_todo",
+                                 input := Json.mkObj [("title", "gamma")] }] },
+      { content := #[.text "Added it."] }]
   let store ← memoryStore alice #[]
   let browser ← panelOf assistant store
   discard <| sendPrompt browser "add gamma"
@@ -375,7 +381,7 @@ The gate holds the turn before its first reply, so nothing has run and the count
 This one costs the poll's full wait, since there is deliberately no movement to cut it short. -/
 private def testAPollWithNothingNewLeavesTheListAlone : IO Unit := do
   let gate ← IO.Promise.new
-  let assistant ← scriptedAssistant #[{ text := "hello" }] (gate := some gate)
+  let assistant ← scriptedAssistant #[{ content := #[.text "hello"] }] (gate := some gate)
   let store ← memoryStore alice #[alpha]
   let browser ← panelOf assistant store
   whileHeld gate do

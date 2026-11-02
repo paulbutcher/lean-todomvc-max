@@ -52,7 +52,9 @@ another message coming with the answer in it. -/
 def messageView : Msg → List (Node .flow)
   | .user text =>
     [div [div [text] { class_ := "chat-bubble" }] { class_ := "chat-message from-user" }]
-  | .assistant text calls =>
+  | .assistant content =>
+    let text := LLMClient.Block.joinText content
+    let calls := LLMClient.Block.toolCalls content
     let spoken :=
       if text.isEmpty then []
       else [(div [renderMarkdown text] { class_ := "chat-bubble" } : Node .flow)]

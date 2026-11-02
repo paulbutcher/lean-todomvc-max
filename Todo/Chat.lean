@@ -18,7 +18,7 @@ open Telemetry (TelemetryT)
 
 namespace Todo
 
-open LLMClient (Msg ToolCall)
+open LLMClient (Block Msg ToolCall)
 
 /-! ## A message as a row -/
 
@@ -54,12 +54,18 @@ def toolCallsOfJson (j : Json) : Array ToolCall :=
   | .ok elems => elems.filterMap toolCallOfJson
   | .error _ => #[]
 
+/-- An assistant turn as a row reads it back: its prose, then its calls. Thinking blocks are not
+stored, because a provider needs them only within the turn that produced them, and a replayed turn
+is one that has already finished. -/
+def assistantBlocks (text : String) (calls : Array ToolCall) : Array Block :=
+  (if text.isEmpty then #[] else #[.text text]) ++ calls.map .toolCall
+
 def ChatRow.ofMsg : Msg → ChatRow
   | .user text =>
     { role := "user", body := text, toolCalls := Json.arr #[], toolCallId := "", isError := false }
-  | .assistant text calls =>
-    { role := "assistant", body := text, toolCalls := toolCallsJson calls, toolCallId := "",
-      isError := false }
+  | .assistant content =>
+    { role := "assistant", body := Block.joinText content,
+      toolCalls := toolCallsJson (Block.toolCalls content), toolCallId := "", isError := false }
   -- A structured result is not stored: `output` is the same answer, and a replayed turn is one
   -- the model has already been told the answer to.
   | .toolResult id output isError _ =>
@@ -68,7 +74,8 @@ def ChatRow.ofMsg : Msg → ChatRow
 /-- A role outside the three `ofMsg` writes is read as a user turn. Refusing it instead would
 make one unrecognised row hide the whole conversation behind it. -/
 def ChatRow.toMsg (row : ChatRow) : Msg :=
-  if row.role == "assistant" then .assistant row.body (toolCallsOfJson row.toolCalls)
+  if row.role == "assistant" then
+    .assistant (assistantBlocks row.body (toolCallsOfJson row.toolCalls))
   else if row.role == "tool" then .toolResult row.toolCallId row.body row.isError
   else .user row.body
 
