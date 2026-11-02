@@ -94,7 +94,7 @@ no reply to explain the absence of, and a note on its own would be noise. -/
 def recordUnfinished (assistant : Assistant) (account : Account) (stored reached : Array Msg) :
     TelemetryT IO Unit := do
   if reached.size > stored.size then
-    let added := (reached.extract stored.size reached.size).push (.assistant unfinishedNote)
+    let added := (reached.extract stored.size reached.size).push (.assistant #[.text unfinishedNote])
     blocking (assistant.chat.append account added)
 
 /-- Runs one turn to completion and records what came of it, having been started by a request
