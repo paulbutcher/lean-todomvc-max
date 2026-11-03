@@ -46,9 +46,9 @@ def cardPage (assets : Assets) (heading : String) (children : List (Node .flow))
         ++ scripts.map fun s => (script s : Node .metadata)))
     (body
       [ section_
-          [ header [h1 ["todos"]] { class_ := "header" },
-            div children { class_ := "auth" } ]
-          { class_ := "todoapp" } ])
+          [ header [h1 ["todos"]] { class_ := classes [.header] },
+            div children { class_ := classes [.auth] } ]
+          { class_ := classes [.todoapp] } ])
     (lang := "en")
 
 /-- A form field carrying something the browser sends back rather than shows, and nothing at all
@@ -81,27 +81,27 @@ def itemView (item : Item) : Node .listItem :=
   li
     [ div
         [ Htmx.input
-            { type := "checkbox", checked := item.completed, class_ := "toggle",
+            { type := "checkbox", checked := item.completed, class_ := classes [.toggle],
               hxPost := links.toggle id, hxTarget := "#todo-list-section",
               hxSwap := some .outerHTML },
           Htmx.label [item.title]
             { hxGet := links.edit id, hxTrigger := "dblclick",
               hxTarget := s!"#{itemId}", hxSwap := some .outerHTML },
           Htmx.button []
-            { class_ := "destroy", hxDelete := links.todo id,
+            { class_ := classes [.destroy], hxDelete := links.todo id,
               hxTarget := "#todo-list-section", hxSwap := some .outerHTML } ]
-        { class_ := "view" } ]
-    { id := itemId, class_ := if item.completed then "completed" else none }
+        { class_ := classes [.view] } ]
+    { id := itemId, class_ := classes (if item.completed then [.completed] else []) }
 
 def itemEditView (item : Item) : Node .listItem :=
   let itemId := s!"todo-{item.id}"
   li
     [ Htmx.input
-        { type := "text", name := "title", value := item.title, class_ := "edit",
+        { type := "text", name := "title", value := item.title, class_ := classes [.edit],
           hxPut := links.todo item.id.toInt.toNat, hxTrigger := "blur, keyup[key=='Enter']",
           hxTarget := "#todo-list-section", hxSwap := some .outerHTML }
         [("autofocus", "autofocus")] ]
-    { id := itemId, class_ := "editing" }
+    { id := itemId, class_ := classes [.editing] }
 
 /-! ## Noticing that the list has changed underneath the page -/
 
@@ -147,17 +147,17 @@ def listSection (items : Array Item) (digest : String) (oob : Bool := false) : N
   Htmx.section_
     [ Htmx.input
         { type := "checkbox", checked := allCompleted, id := "toggle-all",
-          class_ := "toggle-all", hxPost := links.toggleAll,
+          class_ := classes [.toggleAll], hxPost := links.toggleAll,
           hxTarget := "#todo-list-section", hxSwap := some .outerHTML },
       label [] { for_ := "toggle-all" },
-      ul (items.toList.map (itemView ·)) { class_ := "todo-list" },
+      ul (items.toList.map (itemView ·)) { class_ := classes [.todoList] },
       listWatcher digest ]
-    { id := "todo-list-section", class_ := "main",
+    { id := "todo-list-section", class_ := classes [.main],
       hxSwapOob := if oob then some "true" else none }
 
 def filterLink (current target : Filter) (label : String) : Node .listItem :=
   li [ a { href := target.path,
-           class_ := if current == target then "selected" else none } [label] ]
+           class_ := classes (if current == target then [.selected] else []) } [label] ]
 
 def countLabel(activeCount : Nat) : String :=
   if activeCount == 1 then "1 item left" else s!"{activeCount} items left"
@@ -166,16 +166,16 @@ def footerFragment (allItems : Array Item) (filter : Filter) : Node .flow :=
   let activeCount := (allItems.filter (!·.completed)).size
   let completedCount := allItems.size - activeCount
   Htmx.footer
-    ([ (span [countLabel activeCount] { class_ := "todo-count" } : Node .flow),
+    ([ (span [countLabel activeCount] { class_ := classes [.todoCount] } : Node .flow),
        ul [ filterLink filter .all "All", filterLink filter .active "Active",
             filterLink filter .completed "Completed" ]
-         { class_ := "filters" } ]
+         { class_ := classes [.filters] } ]
       ++ if completedCount > 0 then
            [ (Htmx.button ["Clear completed"]
-               { class_ := "clear-completed", hxDelete := links.clearCompleted,
+               { class_ := classes [.clearCompleted], hxDelete := links.clearCompleted,
                  hxTarget := "#todo-list-section", hxSwap := some .outerHTML } : Node .flow) ]
          else [])
-    { id := "todo-footer", class_ := "footer", hxSwapOob := "true" }
+    { id := "todo-footer", class_ := classes [.footer], hxSwapOob := "true" }
 
 def mutationFragment (items allItems : Array Item) (filter : Filter) : String :=
   Node.render (listSection items (listDigest allItems))
@@ -198,8 +198,8 @@ def accountFooter (address : Option String) : Node .flow :=
           | some address => [(p [s!"Signed in as {address}"] : Node .flow)])
       ++ [ (p [a { href := links.account } ["Your account"]] : Node .flow),
            (Htmx.button ["Sign out"]
-              { class_ := "sign-out", hxPost := links.signOut } : Node .flow) ])
-    { class_ := "info" }
+              { class_ := classes [.signOut], hxPost := links.signOut } : Node .flow) ])
+    { class_ := classes [.info] }
 
 /-- The list and the panel side by side, with a divider between them that `chat.js` makes
 draggable. The width the drag settles on is the browser's to remember, not the server's: it is a
@@ -208,10 +208,10 @@ wants two different answers. -/
 def appShell (address : Option String) (messages : Array LLMClient.Msg) (turn : Option TurnState)
     (main : List (Node .flow)) : Node .flow :=
   div
-    [ div (main ++ [accountFooter address]) { class_ := "app-pane", id := "app-pane" },
-      div [] { class_ := "app-divider", id := "app-divider" },
+    [ div (main ++ [accountFooter address]) { class_ := classes [.appPane], id := "app-pane" },
+      div [] { class_ := classes [.appDivider], id := "app-divider" },
       chatPanel messages turn ]
-    { class_ := "app-shell" }
+    { class_ := classes [.appShell] }
 
 def pageView (assets : Assets) (csrfToken : Option String) (address : Option String)
     (messages : Array LLMClient.Msg) (turn : Option TurnState) (items allItems : Array Item)
@@ -228,15 +228,15 @@ def pageView (assets : Assets) (csrfToken : Option String) (address : Option Str
                     Htmx.form
                       [ input
                           { name := "title", placeholder := "What needs to be done?",
-                            class_ := "new-todo" }
+                            class_ := classes [.newTodo] }
                           [("autofocus", "autofocus")] ]
                       { hxPost := links.todos, hxTarget := "#todo-list-section",
                         hxSwap := some .outerHTML,
                         hxOnHtmx := [("after-request", "this.reset()")] } ]
-                  { class_ := "header" },
+                  { class_ := classes [.header] },
                 listSection items (listDigest allItems),
                 footerFragment allItems filter ]
-              { class_ := "todoapp" } ] ]
+              { class_ := classes [.todoapp] } ] ]
       (rawAttrs := csrfAttrs csrfToken))
     (lang := "en")
 

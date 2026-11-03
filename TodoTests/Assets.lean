@@ -32,7 +32,7 @@ private def testEveryNamedFileIsThere : IO Unit := do
   checkEq "the real directory" false (← threw (Assets.load "public"))
   let missing ← IO.FS.createTempDir
   try
-    for name in ["favicon.svg", "auth.css", "chat.css", "chat.js"] do
+    for name in ["favicon.svg", "chat.js"] do
       IO.FS.writeFile (missing / name) ""
     checkEq "one file short" true (← threw (Assets.load missing))
   finally

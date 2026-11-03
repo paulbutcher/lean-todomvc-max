@@ -15,6 +15,7 @@ public import TodoTests.Federation
 public import TodoTests.Logs
 public import TodoTests.Mcp
 public import TodoTests.Store
+public import TodoTests.Styles
 public import TodoTests.Tracing
 public import TodoTests.Views
 

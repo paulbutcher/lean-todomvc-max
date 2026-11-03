@@ -9,6 +9,7 @@ public import Html
 public import Htmx
 public import GFMarkdown
 public import Todo.Chat
+public import Todo.Classes
 public import Todo.Links
 
 @[expose] public section
@@ -31,15 +32,15 @@ def renderMarkdown (text : String) : Node .flow :=
 /-- One tool call as the panel names it. The model's own names are what appear, since they are
 what it is asked to call and what a reader comparing the two would look for. -/
 def toolLine (running : Bool) (name : String) : Node .listItem :=
-  li [(span [name] { class_ := "chat-tool-name" } : Node .flow)]
-    { class_ := if running then "chat-tool running" else "chat-tool" }
+  li [(span [name] { class_ := classes [.chatToolName] } : Node .flow)]
+    { class_ := classes (.chatTool :: if running then [.running] else []) }
 
 def toolList (tools : Array String) (runningLast : Bool) : List (Node .flow) :=
   if tools.isEmpty then []
   else
     [(ul (tools.toList.zipIdx.map fun (name, index) =>
         toolLine (runningLast && index + 1 == tools.size) name)
-       { class_ := "chat-tools" } : Node .flow)]
+       { class_ := classes [.chatTools] } : Node .flow)]
 
 /-! ## The transcript -/
 
@@ -51,16 +52,16 @@ An assistant turn with no text is one that only called tools, and the turn it be
 another message coming with the answer in it. -/
 def messageView : Msg → List (Node .flow)
   | .user text =>
-    [div [div [text] { class_ := "chat-bubble" }] { class_ := "chat-message from-user" }]
+    [div [div [text] { class_ := classes [.chatBubble] }] { class_ := classes [.chatMessage, .fromUser] }]
   | .assistant content =>
     let text := LLMClient.Block.joinText content
     let calls := LLMClient.Block.toolCalls content
     let spoken :=
       if text.isEmpty then []
-      else [(div [renderMarkdown text] { class_ := "chat-bubble" } : Node .flow)]
+      else [(div [renderMarkdown text] { class_ := classes [.chatBubble] } : Node .flow)]
     let asked := toolList (calls.map (·.name)) (runningLast := false)
     if spoken.isEmpty && asked.isEmpty then []
-    else [div (asked ++ spoken) { class_ := "chat-message from-assistant" }]
+    else [div (asked ++ spoken) { class_ := classes [.chatMessage, .fromAssistant] }]
   | .toolResult .. => []
 
 /-- What the model is doing right now, which the transcript cannot show because none of it has
@@ -69,18 +70,18 @@ the fragment this sits in carries the trigger for the next poll only while there
 def turnView : TurnState → Node .flow
   | { phase := .failed message, tools, .. } =>
     div (toolList tools (runningLast := false) ++
-        [(div [s!"That went wrong: {message}"] { class_ := "chat-bubble chat-error" } :
+        [(div [s!"That went wrong: {message}"] { class_ := classes [.chatBubble, .chatError] } :
             Node .flow)])
-      { class_ := "chat-message from-assistant" }
+      { class_ := classes [.chatMessage, .fromAssistant] }
   | { phase := .callingTool _, tools, .. } =>
-    div (toolList tools (runningLast := true)) { class_ := "chat-message from-assistant" }
+    div (toolList tools (runningLast := true)) { class_ := classes [.chatMessage, .fromAssistant] }
   | { phase := .thinking, tools, .. } =>
     div (toolList tools (runningLast := false) ++
-        [(div [span ["Thinking"] {}] { class_ := "chat-bubble chat-thinking" } : Node .flow)])
-      { class_ := "chat-message from-assistant" }
+        [(div [span ["Thinking"] {}] { class_ := classes [.chatBubble, .chatThinking] } : Node .flow)])
+      { class_ := classes [.chatMessage, .fromAssistant] }
 
 def emptyTranscript : Node .flow :=
-  div [p ["Ask me to add, change, or find something in your list."]] { class_ := "chat-empty" }
+  div [p ["Ask me to add, change, or find something in your list."]] { class_ := classes [.chatEmpty] }
 
 /-- The polled part of the panel, and the whole of what a poll returns.
 
@@ -98,7 +99,7 @@ def conversationView (messages : Array Msg) (turn : Option TurnState) : Node .fl
   -- per-browser state of its own.
   let seen := (turn.map (·.mutations)).getD 0
   Htmx.div body
-    { id := "chat-conversation", class_ := "chat-conversation"
+    { id := "chat-conversation", class_ := classes [.chatConversation]
       hxGet := if polling then some s!"{links.chatStatus}?seen={seen}" else none
       hxTrigger := if polling then some "load delay:200ms" else none
       hxTarget := if polling then some "this" else none
@@ -113,20 +114,20 @@ def chatPanel (messages : Array Msg) (turn : Option TurnState) : Node .flow :=
     [ div
         [ (h2 ["Assistant"] : Node .flow),
           (Htmx.button ["New chat"]
-            { class_ := "chat-reset", hxDelete := links.chat,
+            { class_ := classes [.chatReset], hxDelete := links.chat,
               hxTarget := "#chat-conversation", hxSwap := some .outerHTML,
               hxConfirm := "Start a new conversation? This one will be forgotten." } :
             Node .flow) ]
-        { class_ := "chat-header" },
+        { class_ := classes [.chatHeader] },
       conversationView messages turn,
       Htmx.form
         [ Htmx.textarea ""
-            { name := "prompt", class_ := "chat-prompt", rows := some "2",
+            { name := "prompt", class_ := classes [.chatPrompt], rows := some "2",
               placeholder := "Ask about your todos" },
-          (Htmx.button ["Send"] { class_ := "chat-send" } : Node .flow) ]
-        { class_ := "chat-form", hxPost := links.chat, hxTarget := "#chat-conversation",
+          (Htmx.button ["Send"] { class_ := classes [.chatSend] } : Node .flow) ]
+        { class_ := classes [.chatForm], hxPost := links.chat, hxTarget := "#chat-conversation",
           hxSwap := some .outerHTML, hxOnHtmx := [("after-request", "this.reset()")] },
-      p [a { href := links.connect } ["Want to use your own agent?"]] { class_ := "chat-aside" } ]
-    { id := "chat-panel", class_ := "chat-panel" }
+      p [a { href := links.connect } ["Want to use your own agent?"]] { class_ := classes [.chatAside] } ]
+    { id := "chat-panel", class_ := classes [.chatPanel] }
 
 end Todo

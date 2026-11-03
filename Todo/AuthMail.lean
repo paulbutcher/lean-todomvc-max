@@ -7,66 +7,67 @@ module
 
 public import Authentication
 public import Html
+public import Todo.Palette
 import Std.Time
 
 public section
 
 open Html
 open Authentication
+open Css
+open Todo.Palette
 
 namespace Todo.AuthMail
 
 /-! Mail is laid out in nested tables with every rule inline, which is what survives the clients
 people actually read it in: a stylesheet is stripped before the message is shown, and a `div`
-with a width is not honoured by any Outlook that renders through Word. The palette and the
-metrics are `public/auth.css`'s own, so the mail and the page it leads to look like one
-application. -/
+with a width is not honoured by any Outlook that renders through Word. The metrics are
+`Todo.Styles.auth`'s own, so the mail and the page it leads to look like one application. -/
 
-private def sans : String := "'Helvetica Neue', Helvetica, Arial, sans-serif"
+/-- For `bgcolor`, which Outlook paints where it ignores `background-color`. -/
+private def hex (c : Color) : String := Value.render (toValue c)
 
-private def ink : String := "#4d4d4d"
-private def accent : String := "#b83f45"
-private def quiet : String := "#767676"
-private def faint : String := "#949494"
-private def rule : String := "#ededed"
-private def page : String := "#f5f5f5"
-private def paper : String := "#ffffff"
+private def hairlineBorder : Border := { width := px 1, style := .solid, color := hairline }
 
 private def presentation : List (String × String) :=
   [("role", "presentation"), ("cellpadding", "0"), ("cellspacing", "0"), ("border", "0")]
 
 private def spanning : List (String × String) := presentation ++ [("width", "100%")]
 
-private def rows (style : String) (children : List (Node .tableRow))
+private def rows (style : List Declaration) (children : List (Node .tableRow))
     (raw : List (String × String) := spanning) : Node .flow :=
-  table (children : TableBody) { style } raw
+  table (children : TableBody) { style := inlineStyle style } raw
 
-private def band (style : String) (children : List (Node .flow))
+private def band (style : List Declaration) (children : List (Node .flow))
     (raw : List (String × String) := []) : Node .tableRow :=
-  tr [td children { style } raw]
+  tr [td children { style := inlineStyle style } raw]
 
 private def heading (text : String) : Node .flow :=
   h2 [text]
-    { style := s!"margin:0 0 14px;font-family:{sans};font-size:22px;font-weight:300;color:{ink};" }
+    { style := inlineStyle
+        [margin (.three 0 0 (px 14)), fontFamily sans, fontSize (px 22), fontWeight 300, color ink] }
 
 private def line (text : String) : Node .flow :=
   p [text]
-    { style := s!"margin:0 0 20px;font-family:{sans};font-size:16px;line-height:1.5;color:{ink};" }
+    { style := inlineStyle
+        [margin (.three 0 0 (px 20)), fontFamily sans, fontSize (px 16), lineHeight 1.5, color ink] }
 
 private def aside (children : List (Node .phrasing)) : Node .flow :=
   p children
-    { style := s!"margin:0 0 8px;font-family:{sans};font-size:13px;line-height:1.6;color:{quiet};" }
+    { style := inlineStyle
+        [margin (.three 0 0 (px 8)), fontFamily sans, fontSize (px 13), lineHeight 1.6, color quiet] }
 
 /-- A cell with a background rather than a styled anchor: Outlook paints a `td` and ignores an
 inline-block, so this is the shape that has a button in it everywhere. -/
 private def action (href label : String) : Node .flow :=
-  rows "margin:0 0 20px;"
-    [ band s!"border-radius:2px;background-color:{accent};"
+  rows [margin (.three 0 0 (px 20))]
+    [ band [borderRadius (px 2), backgroundColor accent]
         [ a { href,
-              style := s!"display:inline-block;padding:14px 30px;font-family:{sans};\
-                font-size:16px;line-height:1;color:{paper};text-decoration:none;" }
+              style := inlineStyle
+                [ display .inlineBlock, padding (.two (px 14) (px 30)), fontFamily sans,
+                  fontSize (px 16), lineHeight 1, color paper, textDecoration .none ] }
             [label] ]
-        [("bgcolor", accent)] ]
+        [("bgcolor", hex accent)] ]
     presentation
 
 /-- The destination in full, because a client that drops the button, and a reader who prints the
@@ -74,36 +75,42 @@ message, otherwise have nothing left to follow. -/
 private def fallback (link : String) : Node .flow :=
   aside
     [ "If the button does not work, open this instead: ",
-      a { href := link, style := s!"color:{accent};word-break:break-all;" } [link] ]
+      a { href := link, style := inlineStyle [color accent, wordBreak .breakAll] } [link] ]
 
 private def emailedCodeSection : Option String → List (Node .flow)
   | none => []
   | some value =>
     [ line "Or type this code instead:",
-      rows "margin:0 0 20px;"
-        [ band s!"padding:16px;text-align:center;background-color:{page};border:1px solid {rule};\
-            border-radius:2px;"
+      rows [margin (.three 0 0 (px 20))]
+        [ band
+            [ padding (px 16), textAlign .center, backgroundColor page, border hairlineBorder,
+              borderRadius (px 2) ]
             [ Html.code [value]
-                { style := s!"font-family:{sans};font-size:26px;letter-spacing:0.12em;\
-                    color:{ink};" } ]
-            [("bgcolor", page)] ] ]
+                { style := inlineStyle
+                    [fontFamily sans, fontSize (px 26), letterSpacing (em 0.12), color ink] } ]
+            [("bgcolor", hex page)] ] ]
 
 private def note (lines : List (Node .flow)) : Node .flow :=
-  div lines { style := s!"margin-top:24px;padding-top:16px;border-top:1px solid {rule};" }
+  div lines
+    { style := inlineStyle [marginTop (px 24), paddingTop (px 16), borderTop hairlineBorder] }
 
 private def card (children : List (Node .flow)) : Node .tableRow :=
-  band s!"padding:32px 28px;background-color:{paper};border:1px solid {rule};border-radius:2px;"
-    children [("bgcolor", paper)]
+  band
+    [ padding (.two (px 32) (px 28)), backgroundColor paper, border hairlineBorder,
+      borderRadius (px 2) ]
+    children [("bgcolor", hex paper)]
 
 private def footer (text : String) : Node .tableRow :=
-  band "padding:20px 8px 0;text-align:center;"
+  band [padding (.three (px 20) (px 8) 0), textAlign .center]
     [ p [text]
-        { style := s!"margin:0;font-family:{sans};font-size:12px;line-height:1.5;color:{faint};" } ]
+        { style := inlineStyle
+            [margin 0, fontFamily sans, fontSize (px 12), lineHeight 1.5, color faint] } ]
 
 private def wordmark : Node .tableRow :=
-  band "padding:0 0 20px;text-align:center;"
+  band [padding (.three 0 0 (px 20)), textAlign .center]
     [ h1 ["todos"]
-        { style := s!"margin:0;font-family:{sans};font-size:44px;font-weight:200;color:{accent};" } ]
+        { style := inlineStyle
+            [margin 0, fontFamily sans, fontSize (px 44), fontWeight 200, color accent] } ]
 
 /-- `preview` is what an inbox shows beside the subject and the message itself never shows, so
 it says what the subject leaves out rather than repeating it. -/
@@ -114,14 +121,15 @@ private def wrap (subject preview : String) (content : List (Node .tableRow)) : 
         meta_ [("name", "viewport"), ("content", "width=device-width, initial-scale=1")] ])
     (body
       [ div [preview]
-          { style := "display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;\
-              font-size:1px;line-height:1px;" },
-        rows s!"background-color:{page};"
-          [ band "padding:32px 16px;"
-              [ rows "width:100%;max-width:600px;" (wordmark :: content)
+          { style := inlineStyle
+              [ display .none, maxHeight 0, overflow .hidden, opacity 0, color .transparent,
+                fontSize (px 1), lineHeight (px 1) ] },
+        rows [backgroundColor page]
+          [ band [padding (.two (px 32) (px 16))]
+              [ rows [width (pct 100), maxWidth (px 600)] (wordmark :: content)
                   (presentation ++ [("width", "600"), ("align", "center")]) ]
               [("align", "center")] ] ]
-      { style := s!"margin:0;padding:0;background-color:{page};" })
+      { style := inlineStyle [margin 0, padding 0, backgroundColor page] })
     (lang := "en")
 
 private def monthNames : Array String :=

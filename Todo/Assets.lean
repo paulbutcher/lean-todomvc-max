@@ -7,6 +7,7 @@ module
 
 public import Html
 public import MiddlewareAssets
+public import Todo.Styles
 
 public section
 
@@ -14,7 +15,8 @@ open Html
 
 namespace Todo
 
-/-- Every file this application serves itself, already under the path its digest gives it.
+/-- Every asset this application serves itself, the files under `public` and the stylesheets
+`Todo.Styles` renders, each already under the path its digest gives it.
 
 One value carries both halves: `served` is what answers a request for one of these paths, and the
 rest is what the pages render. Nothing else knows an asset's name, so the two cannot disagree
@@ -54,7 +56,8 @@ private def path (a : Middleware.Assets) (logical : String) : IO String := do
   pure served
 
 def load (root : System.FilePath) : IO Assets := do
-  let served ← Middleware.Assets.load root
+  let served := (← Middleware.Assets.load root) ++ .ofBytes
+    [("auth.css", Styles.auth.render.toUTF8), ("chat.css", Styles.chat.render.toUTF8)]
   pure
     { served
       favicon := { rel := "icon", href := ← path served "favicon.svg" }

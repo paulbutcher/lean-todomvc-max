@@ -78,7 +78,7 @@ private def connectForm (provider : Authentication.ProviderConfig) :
     Node .flow :=
   form
     (hidden "returnTo" (some links.account)
-      ++ [(button [s!"Connect {Todo.Federation.label provider.id}"] { class_ := "quiet" }
+      ++ [(button [s!"Connect {Todo.Federation.label provider.id}"] { class_ := classes [.quiet] }
             : Node .flow)])
     { method := "post", action := Todo.federatedStart provider.id }
 
@@ -86,7 +86,7 @@ private def disconnectForm (provider : Authentication.ProviderConfig)
     (credential : Authentication.CredentialId Todo.tenant) (token : Option String) : Node .flow :=
   form
     (hidden Middleware.defaultAntiForgeryParamName token ++ hidden "credential" (some credential.value)
-      ++ [(button [s!"Disconnect {Todo.Federation.label provider.id}"] { class_ := "quiet" }
+      ++ [(button [s!"Disconnect {Todo.Federation.label provider.id}"] { class_ := classes [.quiet] }
             : Node .flow)])
     { method := "post", action := links.accountUnlink }
 
@@ -94,11 +94,11 @@ private def providerRow (linked : List (Authentication.Credential Todo.tenant))
     (token : Option String) (provider : Authentication.ProviderConfig) : Node .listItem :=
   match linkedTo linked provider with
   | some credential =>
-    li [ span [s!"{Todo.Federation.label provider.id}"] { class_ := "provider-name" },
-         span ["Connected"] { class_ := "note" },
+    li [ span [s!"{Todo.Federation.label provider.id}"] { class_ := classes [.providerName] },
+         span ["Connected"] { class_ := classes [.note] },
          disconnectForm provider credential token ]
   | none =>
-    li [ span [s!"{Todo.Federation.label provider.id}"] { class_ := "provider-name" },
+    li [ span [s!"{Todo.Federation.label provider.id}"] { class_ := classes [.providerName] },
          connectForm provider ]
 
 /-- The name is shown in the field that changes it, so a row is the passkey and its controls with
@@ -111,13 +111,13 @@ private def passkeyRow (token : Option String) (passkey : HeldPasskey) : Node .l
            ++ [ (input { type := "text", name := "label", value := passkey.label,
                          placeholder := "Unnamed passkey" }
                   [("aria-label", "Name"), ("autocomplete", "off")] : Node .flow),
-                (button ["Rename"] { class_ := "quiet" } : Node .flow) ])
-         { method := "post", action := links.accountRenamePasskey, class_ := "rename" },
-       span [if passkey.synced then "Synced" else "This device only"] { class_ := "note" },
+                (button ["Rename"] { class_ := classes [.quiet] } : Node .flow) ])
+         { method := "post", action := links.accountRenamePasskey, class_ := classes [.rename] },
+       span [if passkey.synced then "Synced" else "This device only"] { class_ := classes [.note] },
        form
          (hidden Middleware.defaultAntiForgeryParamName token
            ++ hidden "credential" (some passkey.credential.value)
-           ++ [(button ["Remove"] { class_ := "quiet" } : Node .flow)])
+           ++ [(button ["Remove"] { class_ := classes [.quiet] } : Node .flow)])
          { method := "post", action := links.accountUnlink } ]
 
 /-- The name is asked for here because a list of passkeys that all read alike is no help deciding
@@ -129,7 +129,7 @@ private def addPasskey : Node .flow :=
       (Html.label ["Name for a new passkey"] { for_ := "passkey-label" } : Node .flow),
       p [input { type := "text", id := "passkey-label", placeholder := "This laptop" }
            [("autocomplete", "off")]],
-      p [button ["Add a passkey"] { type := "button", class_ := "quiet" }
+      p [button ["Add a passkey"] { type := "button", class_ := classes [.quiet] }
           [("data-passkey-action", "register"), ("data-begin", passkeyRoute "register"),
            ("data-complete", passkeyRoute "register/complete"), ("data-label", "passkey-label"),
            ("data-status", "passkey-status")]],
@@ -147,7 +147,7 @@ def accountPage (assets : Assets) (address : Option String) (providers : List Au
     ([ (h2 ["Your account"] : Node .flow) ]
       ++ (match notice with
           | none => []
-          | some notice => [(p [noticeText notice] { class_ := "note" } : Node .flow)])
+          | some notice => [(p [noticeText notice] { class_ := classes [.note] } : Node .flow)])
       ++ (match address with
           | none => []
           | some address => [(p [s!"Signed in as {address}"] : Node .flow)])
@@ -155,11 +155,11 @@ def accountPage (assets : Assets) (address : Option String) (providers : List Au
             [ (p ["As well as the link we mail you, you can sign in with any of these. \
                    Connecting one here is the only way to use a provider that hides your \
                    address, because there is then no address for us to match on."] : Node .flow),
-              (ul (providers.map (providerRow linked token ·)) { class_ := "providers" }
+              (ul (providers.map (providerRow linked token ·)) { class_ := classes [.providers] }
                 : Node .flow) ])
       ++ (if passkeys.isEmpty then [] else
             [ (Html.label ["Your passkeys"] : Node .flow),
-              (ul (passkeys.map (passkeyRow token ·)) { class_ := "providers passkeys" }
+              (ul (passkeys.map (passkeyRow token ·)) { class_ := classes [.providers, .passkeys] }
                 : Node .flow) ])
       ++ [addPasskey, (p [a { href := links.index } ["Back to your todos"]] : Node .flow)])
     [assets.passkeyScript]

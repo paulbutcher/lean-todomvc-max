@@ -69,7 +69,7 @@ private def codeAside (context : PageContext) (expanded : Bool := false) : List 
            | some action =>
              [ (p ["Or use the code in the mail itself."] : Node .flow),
                codeField context action "Code from the mail" "emailed-code" ])
-      { class_ := "aside", open_ := expanded } ]
+      { class_ := classes [.aside], open_ := expanded } ]
 
 private def withReturnTo (path : String) : Option String → String
   | none => path
@@ -93,12 +93,12 @@ def passkeyBlock (children : List (Node .flow)) : Node .flow :=
 /-- Where `passkey.js` says what went wrong, since a failed ceremony changes nothing else about
 the page. -/
 def passkeyStatus : Node .flow :=
-  p [] { id := "passkey-status", class_ := "warn" } [("aria-live", "polite")]
+  p [] { id := "passkey-status", class_ := classes [.warn] } [("aria-live", "polite")]
 
 /-- `returnTo` rides on the begin as a query parameter, which is where the route reads it; the
 ceremony carries it to the completion, which answers it already checked. -/
 private def passkeySignIn (returnTo : Option String) : List (Node .flow) :=
-  [ p [button ["Sign in with a passkey"] { type := "button", class_ := "provider" }
+  [ p [button ["Sign in with a passkey"] { type := "button", class_ := classes [.provider] }
         [("data-passkey-action", "signin"),
          ("data-begin", withReturnTo (passkeyRoute "signin") returnTo),
          ("data-complete", passkeyRoute "signin/complete"), ("data-status", "passkey-status")]],
@@ -111,11 +111,11 @@ The divider goes inside the passkey block where nothing else follows it, so that
 passkeys and a deployment with no providers are not left an "or" introducing nothing. -/
 private def alternatives (providers : List Authentication.ProviderConfig)
     (returnTo : Option String) : List (Node .flow) :=
-  let divider : Node .flow := p ["or"] { class_ := "divider" }
+  let divider : Node .flow := p ["or"] { class_ := classes [.divider] }
   if providers.isEmpty then [passkeyBlock (divider :: passkeySignIn returnTo)] else
     divider :: passkeyBlock (passkeySignIn returnTo) ::
       providers.map fun provider =>
-        (p [a { href := federatedStart provider.id returnTo, class_ := "provider" }
+        (p [a { href := federatedStart provider.id returnTo, class_ := classes [.provider] }
             [s!"Continue with {Todo.Federation.label provider.id}"]] : Node .flow)
 
 /-- What the federated routes answer for a tenant or a provider this deployment does not have.
@@ -138,7 +138,7 @@ def federationRefusedPage (assets : Assets) : String :=
   cardPage assets "That sign-in could not be completed"
     [ h2 ["That sign-in could not be completed"],
       p ["Signing in with that provider did not work. It may have been cancelled, or it may have
-          told us nothing we could sign you in with."] { class_ := "warn" },
+          told us nothing we could sign you in with."] { class_ := classes [.warn] },
       p ["Signing in with your email address works whether or not you have used a provider
           before."],
       p [a { href := signInPath } ["Sign in with your email address"]] ]
@@ -181,12 +181,12 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
            p [messageText message],
            p ["Open the link on this device and you are signed in. There is nothing to type."],
            p ["Asking again replaces the link, so only the newest one works, and there is a \
-               limit on how often you can ask."] { class_ := "note" } ]
+               limit on how often you can ask."] { class_ := classes [.note] } ]
           ++ codeAside context)
     | refusal =>
       cardPage assets "No link sent"
         [ h2 ["No link sent"],
-          p [messageText refusal] { class_ := "warn" },
+          p [messageText refusal] { class_ := classes [.warn] },
           p [a { href := signInPath } ["Try again"]] ]
   confirm context :=
     cardPage assets s!"Sign in to {context.tenantName}"
@@ -201,7 +201,7 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
       [ h2 ["Your verification code"],
         p ["Type this into the browser you asked to sign in from. It will not sign you in on \
             this device."],
-        p [strong [Html.code [Node.text shown]]] { class_ := "code" },
+        p [strong [Html.code [Node.text shown]]] { class_ := classes [.code] },
         p [s!"Asked for by {context.tenantName}."] ]
   -- Whoever is reading this has a code in front of them and got it wrong, so the field is open
   -- rather than folded away behind the question it already answers.
@@ -215,7 +215,7 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
       cardPage assets "Ask for a new link"
         [ h2 ["This link is finished"],
           p ["Either its attempts ran out or it expired. A new one takes a moment."]
-            { class_ := "warn" },
+            { class_ := classes [.warn] },
           p [a { href := signInPath } ["Ask for a new link"]] ]
     else
       cardPage assets "That code was not right"
@@ -224,7 +224,7 @@ def pages (assets : Assets) (providers : List Authentication.ProviderConfig := [
                 "One more attempt before this link stops working."
               else
                 s!"{remaining} attempts left before this link stops working."]
-             { class_ := "warn" } ]
+             { class_ := classes [.warn] } ]
           ++ codeAside context (expanded := true))
   refused context reason :=
     cardPage assets s!"Sign in to {context.tenantName}"
@@ -256,7 +256,7 @@ def refusedClientPage (assets : Assets) (description : String) : String :=
   cardPage assets "That request was refused"
     [ h2 ["That request was refused"],
       p ["Something asked to use your todo list, and this server could not establish what it \
-          was. Nothing has been sent to it."] { class_ := "warn" },
+          was. Nothing has been sent to it."] { class_ := classes [.warn] },
       p [if description.trimAscii.isEmpty then "No further detail was given." else description],
       p [a { href := Routes.links.index } ["Back to your todos"]] ]
 
@@ -281,7 +281,7 @@ def consentPage (assets : Assets) (context : Authentication.OAuth.Http.ConsentCo
   let loopback : List (Node .flow) :=
     if context.loopbackOnly then
       [p ["It is running on this device. Nothing can establish what it is, beyond that you \
-           started it."] { class_ := "warn" }]
+           started it."] { class_ := classes [.warn] }]
     else []
   cardPage assets s!"Allow {name}?"
     ([ (h2 [s!"Allow {name}?"] : Node .flow),
@@ -296,7 +296,7 @@ def consentPage (assets : Assets) (context : Authentication.OAuth.Http.ConsentCo
                          { type := "checkbox", name := scope.approvalField, value := "on",
                            checked := true, id := scope.approvalField },
                        Html.label [Todo.Authorization.describe scope]
-                         { for_ := scope.approvalField } ]) { class_ := "scopes" } : Node .flow) ]
+                         { for_ := scope.approvalField } ]) { class_ := classes [.scopes] } : Node .flow) ]
                -- The field name is the routes' rather than this page's, because it has to match
                -- whatever `antiForgery` those routes were mounted inside was configured with.
                ++ hidden context.antiForgeryField (some context.antiForgeryToken)

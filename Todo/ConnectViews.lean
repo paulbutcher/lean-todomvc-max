@@ -52,10 +52,10 @@ URL is vouched for by that host and no further: the host is the part worth showi
 the part the client could not have made up. -/
 private def vouching (connection : Authorization.Connection) : Node .flow :=
   match connection.origin, connection.client.host? with
-  | .metadataDocument, some host => p [s!"Identified at {host}."] { class_ := "note" }
-  | .metadataDocument, none => p ["Identified by a URL."] { class_ := "note" }
+  | .metadataDocument, some host => p [s!"Identified at {host}."] { class_ := classes [.note] }
+  | .metadataDocument, none => p ["Identified by a URL."] { class_ := classes [.note] }
   | .dynamic, _ =>
-    p ["Registered itself here, so nothing vouches for that name."] { class_ := "note" }
+    p ["Registered itself here, so nothing vouches for that name."] { class_ := classes [.note] }
 
 private def connectionRow (token : Option String)
     (connection : Authorization.Connection) : Node .listItem :=
@@ -68,14 +68,14 @@ private def connectionRow (token : Option String)
       vouching connection,
       p ["It can:"],
       ul (connection.scopes.map (scopeLine ·)),
-      p [s!"Last used {AuthMail.inWords connection.lastUsedAt}."] { class_ := "note" },
+      p [s!"Last used {AuthMail.inWords connection.lastUsedAt}."] { class_ := classes [.note] },
       form
         (Todo.hidden Middleware.defaultAntiForgeryParamName token
           -- Both halves, because a grant is one client's at one resource and either alone would
           -- name more than the row the button sits under.
           ++ Todo.hidden "client" (some connection.client.value)
           ++ Todo.hidden "resource" (some connection.resource.value)
-          ++ [(button ["Disconnect"] { class_ := "quiet" } : Node .flow)])
+          ++ [(button ["Disconnect"] { class_ := classes [.quiet] } : Node .flow)])
         { method := "post", action := links.disconnectOne } ]
 
 /-- What this account has connected, and a way to take any of it back.
@@ -90,8 +90,8 @@ private def connectionsSection (token : Option String)
   else
     [ div
         [ Html.label ["Assistants you have connected"],
-          ul (connections.map (connectionRow token ·)) { class_ := "connections" } ]
-        { class_ := "withdraw" } ]
+          ul (connections.map (connectionRow token ·)) { class_ := classes [.connections] } ]
+        { class_ := classes [.withdraw] } ]
 
 /-- Withdrawing every approval at once.
 
@@ -108,7 +108,7 @@ private def disconnectSection (token : Option String) : Node .flow :=
         (Todo.hidden Middleware.defaultAntiForgeryParamName token
           ++ [(button ["Disconnect every assistant"] : Node .flow)])
         { method := "post", action := links.disconnect } ]
-    { class_ := "withdraw" }
+    { class_ := classes [.withdraw] }
 
 /-- What the page says about a withdrawal that has just happened. `none` when none has, which is
 every arrival at this page that was not the answer to pressing one of its buttons. -/
@@ -128,11 +128,11 @@ def connectPage (assets : Assets) (endpoint : String) (token : Option String)
     | some (.all count) =>
       [p [if count == 0 then "There was nothing connected."
           else "Disconnected. Every assistant will ask again the next time you use it."]
-        { class_ := "note" }]
+        { class_ := classes [.note] }]
     | some (.one name) =>
-      [p [s!"Disconnected {name}. It will ask again the next time you use it."] { class_ := "note" }]
+      [p [s!"Disconnected {name}. It will ask again the next time you use it."] { class_ := classes [.note] }]
     | some .alreadyGone =>
-      [p ["That one was already disconnected."] { class_ := "note" }]
+      [p ["That one was already disconnected."] { class_ := classes [.note] }]
   cardPage assets "Use your own agent"
     ([ (h2 ["Use your own agent"] : Node .flow) ] ++ confirmation ++
     [ (p ["Your own assistant can work on this list too, the same way the one here does."] : Node .flow),
@@ -140,14 +140,14 @@ def connectPage (assets : Assets) (endpoint : String) (token : Option String)
           guess at yours: copy this and paste it to your assistant, and let it tell you."],
       Html.label ["Paste this to your assistant"] { for_ := "agent-prompt" },
       textarea (agentPrompt endpoint)
-        { id := "agent-prompt", class_ := "prompt", rows := some "14", readonly := true },
+        { id := "agent-prompt", class_ := classes [.prompt], rows := some "14", readonly := true },
       -- The one place on this site a browser needs telling what to do, and `connect.js` is what
       -- tells it. Without the script the button is inert, which is why it names its source in an
       -- attribute rather than being wired up by position: a page that renders it is a page that
       -- has said what it copies.
-      p [button ["Copy"] { type := "button", class_ := "quiet" } [("data-copy", "agent-prompt")]],
+      p [button ["Copy"] { type := "button", class_ := classes [.quiet] } [("data-copy", "agent-prompt")]],
       p ["Nothing in it is secret, so it is safe to paste anywhere you would paste a web \
-          address."] { class_ := "note" },
+          address."] { class_ := classes [.note] },
       Html.label ["What it will ask for"],
       ul (Todo.Authorization.scopes.map (scopeLine ·)),
       p ["You choose, when it asks. Either one can be refused, and an assistant that is given \
@@ -155,10 +155,10 @@ def connectPage (assets : Assets) (endpoint : String) (token : Option String)
       details (summary ["If your assistant cannot do it"])
         [ p ["Not every assistant can reach an MCP server, and some can only on a paid plan. \
               An assistant that asks you for the address directly wants this one:"],
-          p [code [endpoint]] { class_ := "endpoint" },
+          p [code [endpoint]] { class_ := classes [.endpoint] },
           p ["It needs no key beside it. Anything else it asks for, it will find for itself \
               at that address."] ]
-        { class_ := "aside" } ]
+        { class_ := classes [.aside] } ]
     ++ connectionsSection token connections
     ++ [disconnectSection token, p [a { href := links.index } ["Back to your list"]]])
     [assets.connectScript]

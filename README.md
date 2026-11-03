@@ -12,7 +12,7 @@ Lean is a strongly typed functional language with a built-in theorem prover. Thi
 
 - **Totality.** Nothing in this application is `partial` and nothing in it can panic, and the same holds of (almost[^note]) every library in the stack below. A loop that reads until its input runs out carries a bound and a proof that it decreases. `warningAsError` is on, so no unfinished proofs.
 - **Security properties are theorems.** A page carries its anti-forgery attribute exactly when it has a token to put in it (`csrfAttrs_nonempty_iff`): never announcing one it lacks, never dropping one it has. A sign-in refusal is proved to speak only about the request and never about who owns the address (`onlySpeaksAboutTheRequest`), stated over the whole outcome type.
-- **Markup is typed and formally verified.** A `<div>` inside a `<p>` is a type error, text content is escaped on the way in, and `Node.render_wellFormed` proves that what comes out is well-formed HTML.
+- **Markup and styles are typed and formally verified.** A `<div>` inside a `<p>` is a type error, as is `color (px 4)`, text content is escaped on the way in, and `Node.render_wellFormed` and `Stylesheet.render_wellFormed` prove that what comes out is well-formed. The pages and the stylesheets name classes through one type, and it is proved that every class a stylesheet selects on is one the pages can name, and that every one they can name is styled, here or by todomvc-app-css.
 - **Routes are strongly typed.** A handler of the wrong arity or the wrong type does not compile, and a link cannot drift from the route that serves it.
 - **Markdown is formally verified.** lean-markdown is total, never panicking or looping on any input including adversarial input. `renderHtmlSafe` is proved to emit well-formed HTML in which no string from the document can produce markup or break out of an attribute.
 - **What an agent was granted bounds what it can reach.** A token that was not granted `todos:write` reaches no tool that changes anything (`nothing_mutates_without_write`).
@@ -27,6 +27,7 @@ Lean, `Std.Http.Server`, and:
 | | |
 |---|---|
 | [lean-html](https://github.com/paulbutcher/lean-html) · [lean-htmx](https://github.com/paulbutcher/lean-htmx) | typed markup and typed `hx-*` attributes |
+| [lean-css](https://github.com/paulbutcher/lean-css) | typed stylesheets |
 | [lean-routing](https://github.com/paulbutcher/lean-routing) | typed router and route table |
 | [lean-middleware](https://github.com/paulbutcher/lean-middleware) | sessions, sealed cookie store, anti-forgery, fingerprinted static files, request tracing |
 | [lean-authentication](https://github.com/paulbutcher/lean-authentication) | magic links, federated sign-in over OIDC, sessions, rate limiting, bounce handling, consent, and an OAuth 2.1 authorisation server |
