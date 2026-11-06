@@ -50,7 +50,7 @@ rev = "v0.4.2"
 [[require]]
 name = "htmx"
 git = "https://github.com/paulbutcher/lean-htmx"
-rev = "v0.8.1"
+rev = "v0.8.2"
 
 [[require]]
 name = "routing"
@@ -71,7 +71,7 @@ rev = "v0.21.0"
 [[require]]
 name = "authentication"
 git = "https://github.com/paulbutcher/lean-authentication"
-rev = "v0.25.1"
+rev = "v0.25.2"
 
 [[require]]
 name = "leanmigratePostgres"
