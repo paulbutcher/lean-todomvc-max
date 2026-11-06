@@ -12,6 +12,11 @@ permissions:
   contents: write
   pull-requests: write
 
+# One at a time, so bumps started by releases close together never push the branch at once. A newer
+# run replaces one still waiting, and sees every release the older one would have.
+concurrency:
+  group: lean-bump
+
 jobs:
   bump:
     runs-on: ubuntu-latest
