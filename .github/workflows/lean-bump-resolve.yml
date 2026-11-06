@@ -1,0 +1,36 @@
+# Copyright (c) 2026 Paul Butcher. All rights reserved.
+# Released under Apache 2.0 license as described in the file LICENSE.
+
+name: Resolve bump
+
+on:
+  workflow_run:
+    workflows: [Lean Action CI]
+    types: [completed]
+
+# Reads only: pushes, comments, merges and tags use the App's token.
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  checks: read
+
+# One at a time, so the two CI runs of a push never resolve the same commit at once.
+concurrency:
+  group: lean-bump-resolve
+
+jobs:
+  resolve:
+    if: github.event.workflow_run.head_branch == 'lean-bump' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: paulbutcher/lean-bump/resolve@v1
+        with:
+          app-id: ${{ vars.LEAN_BOT_APP_ID }}
+          private-key: ${{ secrets.LEAN_BOT_PRIVATE_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional-tools: ${{ vars.LEAN_BUMP_ADDITIONAL_TOOLS }}
+          # A dry run until the repository sets LEAN_BUMP_RESOLVE_LIVE to true.
+          dry-run: ${{ vars.LEAN_BUMP_RESOLVE_LIVE != 'true' }}
