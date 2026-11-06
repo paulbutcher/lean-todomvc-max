@@ -25,7 +25,7 @@ rev = "v0.5.2"
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.14.0"
+rev = "v0.14.1"
 
 [[require]]
 name = "markdown"
