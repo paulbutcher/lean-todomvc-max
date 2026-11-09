@@ -8,9 +8,9 @@ on:
   repository_dispatch: { types: [lean-dependency-released] }
   workflow_dispatch:
 
+# Reads only: the push and the PR use the App's token, so the PR's CI runs.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 # One at a time, so bumps started by releases close together never push the branch at once. A newer
 # run replaces one still waiting, and sees every release the older one would have.
@@ -21,7 +21,12 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.LEAN_BOT_APP_ID }}
+          private-key: ${{ secrets.LEAN_BOT_PRIVATE_KEY }}
       - uses: actions/checkout@v7
       - uses: paulbutcher/lean-bump@v1
         with:
-          token: ${{ secrets.LEAN_BUMP_TOKEN }}
+          token: ${{ steps.app.outputs.token }}
