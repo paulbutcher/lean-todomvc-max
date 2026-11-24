@@ -9,7 +9,7 @@ warningAsError = true
 [[require]]
 name = "awsLambda-http"
 git = "https://github.com/paulbutcher/lean-aws-lambda"
-rev = "v0.5.0"
+rev = "v0.6.1"
 subDir = "http"
 
 [[require]]
@@ -25,12 +25,12 @@ rev = "v0.5.2"
 [[require]]
 name = "html"
 git = "https://github.com/paulbutcher/lean-html"
-rev = "v0.15.1"
+rev = "v0.15.2"
 
 [[require]]
 name = "markdown"
 git = "https://github.com/paulbutcher/lean-markdown"
-rev = "v0.10.0"
+rev = "v0.10.1"
 
 [[require]]
 name = "LLMClient"
@@ -50,7 +50,7 @@ rev = "v0.5.0"
 [[require]]
 name = "htmx"
 git = "https://github.com/paulbutcher/lean-htmx"
-rev = "v0.9.1"
+rev = "v0.9.2"
 
 [[require]]
 name = "routing"
@@ -66,7 +66,7 @@ subDir = "std"
 [[require]]
 name = "middleware"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.22.0"
+rev = "v0.22.1"
 
 [[require]]
 name = "authentication"
@@ -82,19 +82,19 @@ subDir = "postgres"
 [[require]]
 name = "middleware-cookiestore"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.22.0"
+rev = "v0.22.1"
 subDir = "cookiestore"
 
 [[require]]
 name = "middleware-tracing"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.22.0"
+rev = "v0.22.1"
 subDir = "tracing"
 
 [[require]]
 name = "middleware-assets"
 git = "https://github.com/paulbutcher/lean-middleware"
-rev = "v0.22.0"
+rev = "v0.22.1"
 subDir = "assets"
 
 [[require]]
