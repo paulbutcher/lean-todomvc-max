@@ -35,7 +35,7 @@ rev = "v0.10.1"
 [[require]]
 name = "LLMClient"
 git = "https://github.com/paulbutcher/lean-llmclient"
-rev = "v0.12.1"
+rev = "v0.13.0"
 
 [[require]]
 name = "MCP"
